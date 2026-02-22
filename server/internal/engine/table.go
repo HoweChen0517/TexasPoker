@@ -482,40 +482,96 @@ func (t *Table) resolveShowdown() {
 		t.phase = model.PhaseComplete
 		return
 	}
-	type scored struct {
-		p    *Player
-		rank HandRank
-	}
-	scoredHands := make([]scored, 0, len(alive))
-	best := HandRank{Category: -1}
+
+	handRanks := map[string]HandRank{}
 	for _, p := range alive {
-		h := bestOfSeven(append(append([]model.Card{}, p.Cards...), t.board...))
-		scoredHands = append(scoredHands, scored{p: p, rank: h})
-		if compareRank(h, best) > 0 {
-			best = h
-		}
+		handRanks[p.UserID] = bestOfSeven(append(append([]model.Card{}, p.Cards...), t.board...))
 	}
 
-	winners := make([]scored, 0)
-	for _, s := range scoredHands {
-		if compareRank(s.rank, best) == 0 {
-			winners = append(winners, s)
+	players := t.playersSorted()
+	levelsMap := map[int64]bool{}
+	for _, p := range players {
+		if p.TotalBet > 0 {
+			levelsMap[p.TotalBet] = true
 		}
 	}
-	share := int64(0)
-	if len(winners) > 0 {
-		share = t.pot / int64(len(winners))
+	levels := make([]int64, 0, len(levelsMap))
+	for lv := range levelsMap {
+		levels = append(levels, lv)
 	}
-	remain := t.pot - share*int64(len(winners))
+	sort.Slice(levels, func(i, j int) bool { return levels[i] < levels[j] })
 
-	t.winners = make([]model.WinnerView, 0, len(winners))
-	for idx, w := range winners {
-		gain := share
-		if idx == 0 {
-			gain += remain
+	payout := map[string]int64{}
+	prev := int64(0)
+	for _, lv := range levels {
+		slice := lv - prev
+		if slice <= 0 {
+			continue
 		}
-		w.p.Chips += gain
-		t.winners = append(t.winners, model.WinnerView{UserID: w.p.UserID, Name: w.p.Name, Amount: gain, HandTag: w.rank.Label})
+
+		contributors := make([]*Player, 0)
+		for _, p := range players {
+			if p.TotalBet >= lv {
+				contributors = append(contributors, p)
+			}
+		}
+		if len(contributors) == 0 {
+			prev = lv
+			continue
+		}
+		potSize := slice * int64(len(contributors))
+
+		eligible := make([]*Player, 0)
+		for _, p := range contributors {
+			if !p.Folded && len(p.Cards) > 0 {
+				eligible = append(eligible, p)
+			}
+		}
+		if len(eligible) == 0 {
+			prev = lv
+			continue
+		}
+
+		best := HandRank{Category: -1}
+		for _, p := range eligible {
+			if compareRank(handRanks[p.UserID], best) > 0 {
+				best = handRanks[p.UserID]
+			}
+		}
+
+		winners := make([]*Player, 0)
+		for _, p := range eligible {
+			if compareRank(handRanks[p.UserID], best) == 0 {
+				winners = append(winners, p)
+			}
+		}
+		sort.Slice(winners, func(i, j int) bool { return winners[i].Seat < winners[j].Seat })
+		share := potSize / int64(len(winners))
+		remain := potSize - share*int64(len(winners))
+		for idx, w := range winners {
+			gain := share
+			if int64(idx) < remain {
+				gain++
+			}
+			payout[w.UserID] += gain
+		}
+		prev = lv
+	}
+
+	t.winners = make([]model.WinnerView, 0, len(payout))
+	for _, p := range players {
+		amount := payout[p.UserID]
+		if amount <= 0 {
+			continue
+		}
+		p.Chips += amount
+		tag := handRanks[p.UserID].Label
+		t.winners = append(t.winners, model.WinnerView{
+			UserID:  p.UserID,
+			Name:    p.Name,
+			Amount:  amount,
+			HandTag: tag,
+		})
 	}
 	t.roundMessage = "Showdown complete"
 	t.phase = model.PhaseComplete

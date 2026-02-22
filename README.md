@@ -78,3 +78,25 @@ git init
 git add .
 git commit -m "feat: bootstrap multiplayer texas poker backend and react table ui"
 ```
+
+## 让其他人加入（公网部署）
+
+当前项目默认是本地开发模式；如果要让其他人加入，需要把后端部署到一台可公网访问的服务器。
+
+最小步骤：
+
+1. 准备一台云服务器（Linux，开放 80/443 端口）。
+2. 在服务器启动后端：
+   ```bash
+   cd server
+   go run ./cmd/pokerd
+   ```
+3. 用 Nginx/Caddy 反向代理到 `localhost:8080`，并配置 HTTPS。
+4. 前端构建时把 API 地址指向公网域名：
+   ```bash
+   cd web
+   VITE_API_URL=https://your-domain.com npm run build
+   ```
+5. 把 `web/dist` 部署到静态站点服务（Nginx/Vercel/Netlify 均可）。
+
+玩家只要访问你的前端地址，并使用同一个 `room` 参数，就能进入同一张桌子。
