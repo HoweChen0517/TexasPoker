@@ -6,17 +6,28 @@ type Props = {
   isYou: boolean;
   myCards: Card[];
   activeSeat: number;
+  seatIndex: number;
+  selectedSeat: number | null;
+  onSelectSeat: (seat: number) => void;
 };
 
-export function Seat({ player, isYou, myCards, activeSeat }: Props) {
+export function Seat({ player, isYou, myCards, activeSeat, seatIndex, selectedSeat, onSelectSeat }: Props) {
   if (!player) {
-    return <div className="seat empty">Empty</div>;
+    return (
+      <button className={`seat empty ${selectedSeat === seatIndex ? 'selected' : ''}`} onClick={() => onSelectSeat(seatIndex)}>
+        Empty Seat #{seatIndex + 1}
+      </button>
+    );
   }
 
   return (
-    <div className={`seat ${activeSeat === player.seat ? 'active' : ''} ${player.has_folded ? 'folded' : ''}`}>
+    <button
+      className={`seat ${activeSeat === player.seat ? 'active' : ''} ${player.has_folded ? 'folded' : ''} ${selectedSeat === seatIndex ? 'selected' : ''}`}
+      onClick={() => onSelectSeat(seatIndex)}
+    >
       <div className="seat-head">
         <span className="name">{player.name}</span>
+        {isYou && <span className="tag">YOU</span>}
         {player.is_dealer && <span className="tag">D</span>}
         {player.is_small_blind && <span className="tag">SB</span>}
         {player.is_big_blind && <span className="tag">BB</span>}
@@ -26,10 +37,8 @@ export function Seat({ player, isYou, myCards, activeSeat }: Props) {
       <div className="cards-inline">
         {isYou
           ? myCards.map((c, i) => <CardFace key={`${c.suit}${c.rank}-${i}`} card={c} />)
-          : Array.from({ length: Math.min(2, player.cards_count) }).map((_, i) => (
-              <CardFace key={`hidden-${i}`} hidden />
-            ))}
+          : Array.from({ length: Math.min(2, player.cards_count) }).map((_, i) => <CardFace key={`hidden-${i}`} hidden />)}
       </div>
-    </div>
+    </button>
   );
 }

@@ -20,6 +20,9 @@ type Player struct {
 	AllIn            bool
 	Connected        bool
 	ContributedRound bool
+	IsSpectator      bool
+	JoinNextHand     bool
+	RequestedSeat    int
 }
 
 type Table struct {
@@ -39,6 +42,8 @@ type Table struct {
 	deck         []model.Card
 	winners      []model.WinnerView
 	roundMessage string
+	deckMode     string
+	shortDeck    bool
 }
 
 func NewTable(roomID string) *Table {
@@ -52,19 +57,29 @@ func NewTable(roomID string) *Table {
 		actingSeat: -1,
 		phase:      model.PhaseWaiting,
 		minRaise:   20,
+		deckMode:   "classic",
 	}
 }
 
-func (t *Table) AddOrReconnectPlayer(userID, name string) *Player {
+func (t *Table) AddOrReconnectPlayer(userID, name string, buyIn int64) *Player {
 	if p, ok := t.Players[userID]; ok {
 		p.Connected = true
 		if name != "" {
 			p.Name = name
 		}
+		if buyIn > 0 && p.Chips == 0 && t.phase != model.PhasePreflop && t.phase != model.PhaseFlop && t.phase != model.PhaseTurn && t.phase != model.PhaseRiver && t.phase != model.PhaseShowdown {
+			p.Chips = buyIn
+		}
 		return p
 	}
-	seat := t.firstFreeSeat()
-	p := &Player{UserID: userID, Name: name, Seat: seat, Chips: 2000, Connected: true}
+	if buyIn <= 0 {
+		buyIn = 2000
+	}
+	p := &Player{UserID: userID, Name: name, Seat: -1, Chips: buyIn, Connected: true, IsSpectator: true, RequestedSeat: -1}
+	if !t.isHandRunning() {
+		p.IsSpectator = false
+		p.Seat = t.firstFreeSeat()
+	}
 	t.Players[userID] = p
 	return p
 }
@@ -75,10 +90,81 @@ func (t *Table) DisconnectPlayer(userID string) {
 	}
 }
 
+func (t *Table) SetDeckMode(mode string) {
+	switch mode {
+	case "short":
+		t.deckMode = "short"
+		t.shortDeck = true
+	default:
+		t.deckMode = "classic"
+		t.shortDeck = false
+	}
+}
+
+func (t *Table) RequestJoinTable(userID string, seat int) error {
+	p, ok := t.Players[userID]
+	if !ok {
+		return errors.New("player not found")
+	}
+	if !p.IsSpectator {
+		if seat >= 0 {
+			return t.ChangeSeat(userID, seat)
+		}
+		return nil
+	}
+	if seat >= t.MaxSeats {
+		return errors.New("invalid seat")
+	}
+	if !t.isHandRunning() {
+		if err := t.assignSeat(p, seat); err != nil {
+			return err
+		}
+		p.IsSpectator = false
+		p.JoinNextHand = false
+		return nil
+	}
+	p.JoinNextHand = true
+	p.RequestedSeat = seat
+	return nil
+}
+
+func (t *Table) ChangeSeat(userID string, seat int) error {
+	if seat < 0 || seat >= t.MaxSeats {
+		return errors.New("invalid seat")
+	}
+	p, ok := t.Players[userID]
+	if !ok {
+		return errors.New("player not found")
+	}
+	if p.IsSpectator {
+		p.RequestedSeat = seat
+		p.JoinNextHand = true
+		return nil
+	}
+	if t.isHandRunning() {
+		return errors.New("can only change seat between hands")
+	}
+	if p.Seat == seat {
+		return nil
+	}
+	other := t.playerBySeat(seat)
+	if other == nil {
+		p.Seat = seat
+		return nil
+	}
+	if other.IsSpectator {
+		p.Seat = seat
+		return nil
+	}
+	other.Seat, p.Seat = p.Seat, other.Seat
+	return nil
+}
+
 func (t *Table) StartHand() error {
 	if t.phase != model.PhaseWaiting && t.phase != model.PhaseComplete {
 		return errors.New("a hand is already running")
 	}
+	t.activateQueuedPlayers()
 	active := t.activeForNewHand()
 	if len(active) < 2 {
 		return errors.New("need at least 2 players with chips")
@@ -88,7 +174,7 @@ func (t *Table) StartHand() error {
 	t.phase = model.PhasePreflop
 	t.pot = 0
 	t.board = nil
-	t.deck = newDeck()
+	t.deck = newDeck(t.shortDeck)
 	t.winners = nil
 	t.roundMessage = ""
 	t.currentBet = 0
@@ -108,15 +194,15 @@ func (t *Table) StartHand() error {
 	}
 
 	t.dealerSeat = t.nextSeatFrom(t.dealerSeat, func(p *Player) bool {
-		return !p.Folded && p.Chips > 0
+		return !p.Folded && !p.IsSpectator && p.Chips >= 0 && len(p.Cards) > 0
 	})
-	sbSeat := t.nextSeatFrom(t.dealerSeat, func(p *Player) bool { return !p.Folded && p.Chips > 0 })
-	bbSeat := t.nextSeatFrom(sbSeat, func(p *Player) bool { return !p.Folded && p.Chips > 0 })
+	sbSeat := t.nextSeatFrom(t.dealerSeat, func(p *Player) bool { return !p.Folded && !p.IsSpectator && len(p.Cards) > 0 })
+	bbSeat := t.nextSeatFrom(sbSeat, func(p *Player) bool { return !p.Folded && !p.IsSpectator && len(p.Cards) > 0 })
 	t.postBlind(sbSeat, t.SmallBlind)
 	t.postBlind(bbSeat, t.BigBlind)
 
 	t.actingSeat = t.nextSeatFrom(bbSeat, func(p *Player) bool {
-		return !p.Folded && !p.AllIn && p.Chips >= 0
+		return !p.Folded && !p.AllIn && !p.IsSpectator && len(p.Cards) > 0
 	})
 	t.roundMessage = "Preflop started"
 	return nil
@@ -133,7 +219,7 @@ func (t *Table) ApplyAction(userID string, action model.ActionInput) error {
 	if p.Seat != t.actingSeat {
 		return errors.New("not your turn")
 	}
-	if p.Folded || p.AllIn {
+	if p.Folded || p.AllIn || p.IsSpectator || len(p.Cards) == 0 {
 		return errors.New("player cannot act")
 	}
 
@@ -239,7 +325,7 @@ func (t *Table) ApplyAction(userID string, action model.ActionInput) error {
 		}
 	}
 	t.actingSeat = t.nextSeatFrom(t.actingSeat, func(np *Player) bool {
-		return !np.Folded && !np.AllIn && np.Chips >= 0
+		return !np.Folded && !np.AllIn && !np.IsSpectator && len(np.Cards) > 0
 	})
 	return nil
 }
@@ -256,10 +342,12 @@ func (t *Table) SnapshotFor(userID string) model.Snapshot {
 			HasFolded:    p.Folded,
 			IsAllIn:      p.AllIn,
 			IsConnected:  p.Connected,
+			IsSpectator:  p.IsSpectator,
+			JoinNextHand: p.JoinNextHand,
 			CardsCount:   len(p.Cards),
-			IsDealer:     p.Seat == t.dealerSeat,
-			IsSmallBlind: p.Seat == t.smallBlindSeat(),
-			IsBigBlind:   p.Seat == t.bigBlindSeat(),
+			IsDealer:     !p.IsSpectator && p.Seat == t.dealerSeat,
+			IsSmallBlind: !p.IsSpectator && p.Seat == t.smallBlindSeat(),
+			IsBigBlind:   !p.IsSpectator && p.Seat == t.bigBlindSeat(),
 		})
 	}
 	s := model.Snapshot{
@@ -271,6 +359,7 @@ func (t *Table) SnapshotFor(userID string) model.Snapshot {
 		MinRaise:     t.minRaise,
 		BlindSmall:   t.SmallBlind,
 		BlindBig:     t.BigBlind,
+		DeckMode:     t.deckMode,
 		DealerSeat:   t.dealerSeat,
 		ActingSeat:   t.actingSeat,
 		Board:        append([]model.Card(nil), t.board...),
@@ -289,14 +378,26 @@ func (t *Table) playersSorted() []*Player {
 	for _, p := range t.Players {
 		out = append(out, p)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Seat < out[j].Seat })
+	sort.Slice(out, func(i, j int) bool {
+		si, sj := out[i].Seat, out[j].Seat
+		if si < 0 && sj >= 0 {
+			return false
+		}
+		if si >= 0 && sj < 0 {
+			return true
+		}
+		if si == sj {
+			return out[i].UserID < out[j].UserID
+		}
+		return si < sj
+	})
 	return out
 }
 
 func (t *Table) activeForNewHand() []*Player {
 	out := make([]*Player, 0)
 	for _, p := range t.Players {
-		if p.Connected && p.Chips > 0 {
+		if p.Connected && !p.IsSpectator && p.Chips > 0 && p.Seat >= 0 {
 			out = append(out, p)
 		}
 	}
@@ -306,7 +407,7 @@ func (t *Table) activeForNewHand() []*Player {
 func (t *Table) playersAlive() []*Player {
 	out := make([]*Player, 0)
 	for _, p := range t.Players {
-		if !p.Folded && len(p.Cards) > 0 {
+		if !p.Folded && !p.IsSpectator && len(p.Cards) > 0 {
 			out = append(out, p)
 		}
 	}
@@ -316,7 +417,7 @@ func (t *Table) playersAlive() []*Player {
 func (t *Table) playersToAct() []*Player {
 	out := make([]*Player, 0)
 	for _, p := range t.Players {
-		if !p.Folded && !p.AllIn && len(p.Cards) > 0 {
+		if !p.Folded && !p.AllIn && !p.IsSpectator && len(p.Cards) > 0 {
 			out = append(out, p)
 		}
 	}
@@ -381,19 +482,21 @@ func (t *Table) nextSeatFrom(start int, predicate func(*Player) bool) int {
 func (t *Table) firstFreeSeat() int {
 	used := map[int]bool{}
 	for _, p := range t.Players {
-		used[p.Seat] = true
+		if !p.IsSpectator && p.Seat >= 0 {
+			used[p.Seat] = true
+		}
 	}
 	for i := 0; i < t.MaxSeats; i++ {
 		if !used[i] {
 			return i
 		}
 	}
-	return len(t.Players) % t.MaxSeats
+	return -1
 }
 
 func (t *Table) playerBySeat(seat int) *Player {
 	for _, p := range t.Players {
-		if p.Seat == seat {
+		if !p.IsSpectator && p.Seat == seat {
 			return p
 		}
 	}
@@ -402,7 +505,7 @@ func (t *Table) playerBySeat(seat int) *Player {
 
 func (t *Table) resetRoundContributions(exceptUser string) {
 	for _, p := range t.Players {
-		if p.UserID != exceptUser && !p.Folded && !p.AllIn {
+		if p.UserID != exceptUser && !p.Folded && !p.AllIn && !p.IsSpectator && len(p.Cards) > 0 {
 			p.ContributedRound = false
 		}
 	}
@@ -427,7 +530,7 @@ func (t *Table) roundShouldAdvance() bool {
 func (t *Table) advanceStreet() {
 	for _, p := range t.Players {
 		p.CurrentBet = 0
-		if !p.Folded && !p.AllIn {
+		if !p.Folded && !p.AllIn && !p.IsSpectator {
 			p.ContributedRound = false
 		}
 	}
@@ -457,7 +560,7 @@ func (t *Table) advanceStreet() {
 		start = t.bigBlindSeat()
 	}
 	t.actingSeat = t.nextSeatFrom(start, func(p *Player) bool {
-		return !p.Folded && !p.AllIn && len(p.Cards) > 0
+		return !p.Folded && !p.AllIn && !p.IsSpectator && len(p.Cards) > 0
 	})
 }
 
@@ -485,7 +588,7 @@ func (t *Table) resolveShowdown() {
 
 	handRanks := map[string]HandRank{}
 	for _, p := range alive {
-		handRanks[p.UserID] = bestOfSeven(append(append([]model.Card{}, p.Cards...), t.board...))
+		handRanks[p.UserID] = bestOfSeven(append(append([]model.Card{}, p.Cards...), t.board...), t.shortDeck)
 	}
 
 	players := t.playersSorted()
@@ -523,7 +626,7 @@ func (t *Table) resolveShowdown() {
 
 		eligible := make([]*Player, 0)
 		for _, p := range contributors {
-			if !p.Folded && len(p.Cards) > 0 {
+			if !p.Folded && !p.IsSpectator && len(p.Cards) > 0 {
 				eligible = append(eligible, p)
 			}
 		}
@@ -566,12 +669,7 @@ func (t *Table) resolveShowdown() {
 		}
 		p.Chips += amount
 		tag := handRanks[p.UserID].Label
-		t.winners = append(t.winners, model.WinnerView{
-			UserID:  p.UserID,
-			Name:    p.Name,
-			Amount:  amount,
-			HandTag: tag,
-		})
+		t.winners = append(t.winners, model.WinnerView{UserID: p.UserID, Name: p.Name, Amount: amount, HandTag: tag})
 	}
 	t.roundMessage = "Showdown complete"
 	t.phase = model.PhaseComplete
@@ -583,7 +681,7 @@ func (t *Table) smallBlindSeat() int {
 	if t.dealerSeat < 0 {
 		return -1
 	}
-	return t.nextSeatFrom(t.dealerSeat, func(p *Player) bool { return !p.Folded && len(p.Cards) > 0 })
+	return t.nextSeatFrom(t.dealerSeat, func(p *Player) bool { return !p.Folded && !p.IsSpectator && len(p.Cards) > 0 })
 }
 
 func (t *Table) bigBlindSeat() int {
@@ -591,5 +689,46 @@ func (t *Table) bigBlindSeat() int {
 	if sb < 0 {
 		return -1
 	}
-	return t.nextSeatFrom(sb, func(p *Player) bool { return !p.Folded && len(p.Cards) > 0 })
+	return t.nextSeatFrom(sb, func(p *Player) bool { return !p.Folded && !p.IsSpectator && len(p.Cards) > 0 })
+}
+
+func (t *Table) activateQueuedPlayers() {
+	for _, p := range t.playersSorted() {
+		if !p.IsSpectator || !p.JoinNextHand || p.Chips <= 0 || !p.Connected {
+			continue
+		}
+		if err := t.assignSeat(p, p.RequestedSeat); err != nil {
+			continue
+		}
+		p.IsSpectator = false
+		p.JoinNextHand = false
+	}
+}
+
+func (t *Table) assignSeat(p *Player, requested int) error {
+	if requested >= t.MaxSeats {
+		return errors.New("invalid seat")
+	}
+	if requested >= 0 {
+		other := t.playerBySeat(requested)
+		if other == nil {
+			p.Seat = requested
+			return nil
+		}
+		if p.IsSpectator {
+			return errors.New("seat occupied")
+		}
+		other.Seat, p.Seat = p.Seat, other.Seat
+		return nil
+	}
+	free := t.firstFreeSeat()
+	if free < 0 {
+		return errors.New("no empty seat")
+	}
+	p.Seat = free
+	return nil
+}
+
+func (t *Table) isHandRunning() bool {
+	return t.phase != model.PhaseWaiting && t.phase != model.PhaseComplete
 }

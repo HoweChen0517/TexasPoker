@@ -8,10 +8,15 @@ import (
 )
 
 var suits = []model.Suit{model.SuitSpade, model.SuitHeart, model.SuitDiamond, model.SuitClub}
-var ranks = []model.Rank{"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}
+var fullDeckRanks = []model.Rank{"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}
+var shortDeckRanks = []model.Rank{"6", "7", "8", "9", "T", "J", "Q", "K", "A"}
 
-func newDeck() []model.Card {
+func newDeck(shortDeck bool) []model.Card {
 	deck := make([]model.Card, 0, 52)
+	ranks := fullDeckRanks
+	if shortDeck {
+		ranks = shortDeckRanks
+	}
 	for _, s := range suits {
 		for _, r := range ranks {
 			deck = append(deck, model.Card{Suit: s, Rank: r})

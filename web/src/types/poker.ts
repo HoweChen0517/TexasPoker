@@ -15,6 +15,8 @@ export type PlayerView = {
   has_folded: boolean;
   is_all_in: boolean;
   is_connected: boolean;
+  is_spectator: boolean;
+  join_next_hand: boolean;
   cards_count: number;
   is_dealer: boolean;
   is_small_blind: boolean;
@@ -37,6 +39,7 @@ export type Snapshot = {
   min_raise: number;
   blind_small: number;
   blind_big: number;
+  deck_mode: 'classic' | 'short';
   dealer_seat: number;
   acting_seat: number;
   board: Card[];

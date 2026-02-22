@@ -3,7 +3,7 @@ import type { Snapshot } from '../types/poker';
 
 type ConnState = 'idle' | 'connecting' | 'open' | 'closed' | 'error';
 
-export function usePokerSocket(baseUrl: string, room: string, user: string, name: string) {
+export function usePokerSocket(baseUrl: string, room: string, user: string, name: string, buyIn: number) {
   const eventRef = useRef<EventSource | null>(null);
   const [state, setState] = useState<ConnState>('idle');
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -11,7 +11,7 @@ export function usePokerSocket(baseUrl: string, room: string, user: string, name
 
   useEffect(() => {
     setState('connecting');
-    const url = `${baseUrl}/events?room=${encodeURIComponent(room)}&user=${encodeURIComponent(user)}&name=${encodeURIComponent(name)}`;
+    const url = `${baseUrl}/events?room=${encodeURIComponent(room)}&user=${encodeURIComponent(user)}&name=${encodeURIComponent(name)}&buy_in=${buyIn}`;
     const es = new EventSource(url);
     eventRef.current = es;
 
@@ -30,7 +30,7 @@ export function usePokerSocket(baseUrl: string, room: string, user: string, name
       es.close();
       setState('closed');
     };
-  }, [baseUrl, room, user, name]);
+  }, [baseUrl, room, user, name, buyIn]);
 
   const send = useMemo(
     () => async (type: string, payload: Record<string, unknown> = {}) => {

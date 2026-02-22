@@ -8,3 +8,4 @@ server/go.sum
 .cache/
 
 .cache/
+web/tsconfig.tsbuildinfo

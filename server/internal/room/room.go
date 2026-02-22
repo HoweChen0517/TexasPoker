@@ -23,6 +23,7 @@ type Inbound struct {
 type Client interface {
 	ID() string
 	Name() string
+	BuyIn() int64
 	Send([]byte) error
 }
 
@@ -45,7 +46,7 @@ func (s *Session) Join(c Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.clients[c.ID()] = c
-	s.table.AddOrReconnectPlayer(c.ID(), c.Name())
+	s.table.AddOrReconnectPlayer(c.ID(), c.Name(), c.BuyIn())
 	s.pushSnapshotLocked()
 }
 
@@ -65,10 +66,15 @@ func (s *Session) Handle(userID string, raw []byte) error {
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return err
 	}
-	s.table.AddOrReconnectPlayer(userID, "")
+	s.table.AddOrReconnectPlayer(userID, "", 0)
 
 	switch in.Type {
 	case "start_hand":
+		var req struct {
+			Mode string `json:"mode"`
+		}
+		_ = json.Unmarshal(in.Payload, &req)
+		s.table.SetDeckMode(req.Mode)
 		if err := s.table.StartHand(); err != nil {
 			return err
 		}
@@ -82,6 +88,24 @@ func (s *Session) Handle(userID string, raw []byte) error {
 		}
 		a := model.ActionInput{Type: model.ActionType(req.Action), Amount: req.Amount}
 		if err := s.table.ApplyAction(userID, a); err != nil {
+			return err
+		}
+	case "join_table":
+		var req struct {
+			Seat int `json:"seat"`
+		}
+		_ = json.Unmarshal(in.Payload, &req)
+		if err := s.table.RequestJoinTable(userID, req.Seat); err != nil {
+			return err
+		}
+	case "set_seat":
+		var req struct {
+			Seat int `json:"seat"`
+		}
+		if err := json.Unmarshal(in.Payload, &req); err != nil {
+			return err
+		}
+		if err := s.table.ChangeSeat(userID, req.Seat); err != nil {
 			return err
 		}
 	default:

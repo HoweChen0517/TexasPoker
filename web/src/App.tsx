@@ -4,10 +4,14 @@ import { Seat } from './components/Seat';
 import { usePokerSocket } from './hooks/usePokerSocket';
 import type { PlayerView } from './types/poker';
 
-const user = new URLSearchParams(window.location.search).get('user') || `u${Math.floor(Math.random() * 1000)}`;
-const name = new URLSearchParams(window.location.search).get('name') || user;
-const room = new URLSearchParams(window.location.search).get('room') || 'main';
 const apiBase = (import.meta.env.VITE_API_URL as string | undefined) || `http://${window.location.hostname}:8080`;
+
+type LoginState = {
+  room: string;
+  user: string;
+  name: string;
+  buyIn: number;
+};
 
 function seatOrder(players: PlayerView[]) {
   const slots: Array<PlayerView | undefined> = Array.from({ length: 9 }, () => undefined);
@@ -18,19 +22,77 @@ function seatOrder(players: PlayerView[]) {
 }
 
 export default function App() {
+  const [login, setLogin] = useState<LoginState | null>(null);
+
+  if (!login) {
+    return <LoginView onSubmit={setLogin} />;
+  }
+  return <TableView login={login} />;
+}
+
+function LoginView({ onSubmit }: { onSubmit: (s: LoginState) => void }) {
+  const params = new URLSearchParams(window.location.search);
+  const [room, setRoom] = useState(params.get('room') || 'main');
+  const [user, setUser] = useState(params.get('user') || `u${Math.floor(Math.random() * 1000)}`);
+  const [name, setName] = useState(params.get('name') || '');
+  const [buyIn, setBuyIn] = useState(Number(params.get('buyin') || 2000));
+
+  return (
+    <div className="login-page">
+      <form
+        className="login-card"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSubmit({ room, user, name: name || user, buyIn: Math.max(100, buyIn) });
+        }}
+      >
+        <h1>Join Poker Room</h1>
+        <label>
+          Room
+          <input value={room} onChange={(e) => setRoom(e.target.value)} />
+        </label>
+        <label>
+          User ID
+          <input value={user} onChange={(e) => setUser(e.target.value)} />
+        </label>
+        <label>
+          Nickname
+          <input value={name} onChange={(e) => setName(e.target.value)} />
+        </label>
+        <label>
+          Buy-in Chips
+          <input type="number" min={100} value={buyIn} onChange={(e) => setBuyIn(Number(e.target.value || 100))} />
+        </label>
+        <button type="submit">Enter Table</button>
+      </form>
+    </div>
+  );
+}
+
+function TableView({ login }: { login: LoginState }) {
   const [amount, setAmount] = useState(40);
-  const { state, snapshot, error, send } = usePokerSocket(apiBase, room, user, name);
+  const [startMode, setStartMode] = useState<'classic' | 'short'>('classic');
+  const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
+  const { state, snapshot, error, send } = usePokerSocket(apiBase, login.room, login.user, login.name, login.buyIn);
 
   const seats = useMemo(() => seatOrder(snapshot?.players ?? []), [snapshot]);
+  const me = useMemo(() => (snapshot?.players ?? []).find((p) => p.user_id === login.user), [snapshot, login.user]);
+  const spectators = useMemo(() => (snapshot?.players ?? []).filter((p) => p.is_spectator), [snapshot]);
+
+  const clickSeat = async (seat: number) => {
+    setSelectedSeat(seat);
+    await send('set_seat', { seat });
+  };
 
   return (
     <div className="page">
       <header className="topbar">
         <h1>Texas Poker Doodle Table</h1>
         <div className="meta">
-          <span>room: {room}</span>
-          <span>user: {name}</span>
+          <span>room: {login.room}</span>
+          <span>user: {login.name}</span>
           <span>conn: {state}</span>
+          <span>mode: {snapshot?.deck_mode ?? 'classic'}</span>
         </div>
       </header>
 
@@ -38,11 +100,15 @@ export default function App() {
         <section className="table">
           <div className="table-hud">
             <div>phase: {snapshot?.phase ?? 'waiting'}</div>
-            <div>pot: {snapshot?.pot ?? 0}</div>
             <div>current bet: {snapshot?.current_bet ?? 0}</div>
             <div>
               blinds: {snapshot?.blind_small ?? 10}/{snapshot?.blind_big ?? 20}
             </div>
+          </div>
+
+          <div className="pot-highlight">
+            <span className="pot-label">POT</span>
+            <span className="pot-value">{snapshot?.pot ?? 0}</span>
           </div>
 
           <div className="board">
@@ -59,9 +125,12 @@ export default function App() {
               <Seat
                 key={`seat-${idx}`}
                 player={p}
-                isYou={p?.user_id === user}
+                isYou={p?.user_id === login.user}
                 myCards={snapshot?.your_cards ?? []}
                 activeSeat={snapshot?.acting_seat ?? -1}
+                seatIndex={idx}
+                selectedSeat={selectedSeat}
+                onSelectSeat={clickSeat}
               />
             ))}
           </div>
@@ -77,10 +146,31 @@ export default function App() {
               ))}
             </div>
           )}
+
+          <div className="spectator-box">
+            <strong>Spectators:</strong>
+            <div>{spectators.length ? spectators.map((s) => `${s.name}${s.join_next_hand ? ' (next hand)' : ''}`).join(' / ') : 'none'}</div>
+          </div>
         </section>
 
         <aside className="controls">
-          <button onClick={() => send('start_hand')}>Start Hand</button>
+          <label>
+            Start Mode
+            <select value={startMode} onChange={(e) => setStartMode(e.target.value as 'classic' | 'short')}>
+              <option value="classic">Classic</option>
+              <option value="short">Short (remove 2-5, Flush &gt; Full House)</option>
+            </select>
+          </label>
+          <button onClick={() => send('start_hand', { mode: startMode })}>Start Hand</button>
+
+          {me?.is_spectator ? (
+            <button onClick={() => send('join_table', { seat: selectedSeat ?? -1 })}>Join Next Hand</button>
+          ) : (
+            <button disabled={selectedSeat === null} onClick={() => send('set_seat', { seat: selectedSeat ?? -1 })}>
+              Change Seat
+            </button>
+          )}
+
           <button onClick={() => send('action', { action: 'fold' })}>Fold</button>
           <button onClick={() => send('action', { action: 'check' })}>Check</button>
           <button onClick={() => send('action', { action: 'call' })}>Call</button>

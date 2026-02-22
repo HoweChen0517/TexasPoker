@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 
 	"texaspoker/server/internal/room"
@@ -13,12 +14,14 @@ import (
 type SSEClient struct {
 	userID string
 	name   string
+	buyIn  int64
 	ch     chan []byte
 	once   sync.Once
 }
 
 func (c *SSEClient) ID() string   { return c.userID }
 func (c *SSEClient) Name() string { return c.name }
+func (c *SSEClient) BuyIn() int64 { return c.buyIn }
 func (c *SSEClient) Send(msg []byte) error {
 	select {
 	case c.ch <- msg:
@@ -35,12 +38,17 @@ func NewEventsHandler(m *room.Manager) http.HandlerFunc {
 		roomID := r.URL.Query().Get("room")
 		userID := r.URL.Query().Get("user")
 		name := r.URL.Query().Get("name")
+		buyInRaw := r.URL.Query().Get("buy_in")
 		if userID == "" {
 			http.Error(w, "missing user", http.StatusBadRequest)
 			return
 		}
 		if name == "" {
 			name = userID
+		}
+		buyIn, _ := strconv.ParseInt(buyInRaw, 10, 64)
+		if buyIn <= 0 {
+			buyIn = 2000
 		}
 
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -54,7 +62,7 @@ func NewEventsHandler(m *room.Manager) http.HandlerFunc {
 			return
 		}
 
-		client := &SSEClient{userID: userID, name: name, ch: make(chan []byte, 128)}
+		client := &SSEClient{userID: userID, name: name, buyIn: buyIn, ch: make(chan []byte, 128)}
 		session := m.Get(roomID)
 		session.Join(client)
 		defer func() {

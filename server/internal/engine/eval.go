@@ -35,14 +35,14 @@ func compareRank(a, b HandRank) int {
 	return 0
 }
 
-func bestOfSeven(cards []model.Card) HandRank {
+func bestOfSeven(cards []model.Card, shortDeck bool) HandRank {
 	best := HandRank{Category: -1}
 	for a := 0; a < len(cards)-4; a++ {
 		for b := a + 1; b < len(cards)-3; b++ {
 			for c := b + 1; c < len(cards)-2; c++ {
 				for d := c + 1; d < len(cards)-1; d++ {
 					for e := d + 1; e < len(cards); e++ {
-						h := evaluateFive([]model.Card{cards[a], cards[b], cards[c], cards[d], cards[e]})
+						h := evaluateFive([]model.Card{cards[a], cards[b], cards[c], cards[d], cards[e]}, shortDeck)
 						if compareRank(h, best) > 0 {
 							best = h
 						}
@@ -54,7 +54,7 @@ func bestOfSeven(cards []model.Card) HandRank {
 	return best
 }
 
-func evaluateFive(cards []model.Card) HandRank {
+func evaluateFive(cards []model.Card, shortDeck bool) HandRank {
 	rankCounts := map[int]int{}
 	suitCounts := map[model.Suit]int{}
 	ranksDesc := make([]int, 0, 5)
@@ -84,8 +84,10 @@ func evaluateFive(cards []model.Card) HandRank {
 	if len(unique) == 5 {
 		if unique[4]-unique[0] == 4 {
 			straightHigh = unique[4]
-		} else if unique[0] == 2 && unique[1] == 3 && unique[2] == 4 && unique[3] == 5 && unique[4] == 14 {
+		} else if !shortDeck && unique[0] == 2 && unique[1] == 3 && unique[2] == 4 && unique[3] == 5 && unique[4] == 14 {
 			straightHigh = 5
+		} else if shortDeck && unique[0] == 6 && unique[1] == 7 && unique[2] == 8 && unique[3] == 9 && unique[4] == 14 {
+			straightHigh = 9
 		}
 	}
 
@@ -117,11 +119,18 @@ func evaluateFive(cards []model.Card) HandRank {
 		}
 		return HandRank{Category: 7, Values: []int{groups[0].r, kicker}, Label: "Four of a Kind"}
 	}
+	fullHouseCategory := 6
+	flushCategory := 5
+	if shortDeck {
+		flushCategory = 6
+		fullHouseCategory = 5
+	}
+
 	if groups[0].c == 3 && groups[1].c == 2 {
-		return HandRank{Category: 6, Values: []int{groups[0].r, groups[1].r}, Label: "Full House"}
+		return HandRank{Category: fullHouseCategory, Values: []int{groups[0].r, groups[1].r}, Label: "Full House"}
 	}
 	if flush {
-		return HandRank{Category: 5, Values: ranksDesc, Label: "Flush"}
+		return HandRank{Category: flushCategory, Values: ranksDesc, Label: "Flush"}
 	}
 	if straightHigh > 0 {
 		return HandRank{Category: 4, Values: []int{straightHigh}, Label: "Straight"}
