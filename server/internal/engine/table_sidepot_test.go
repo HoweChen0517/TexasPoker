@@ -66,3 +66,53 @@ func TestResolveShowdown_FoldedContributorNotEligible(t *testing.T) {
 		t.Fatalf("B chips got %d want 0", b.Chips)
 	}
 }
+
+func TestAllInDoesNotSkipPendingResponse(t *testing.T) {
+	tb := NewTable("r3")
+	tb.phase = model.PhasePreflop
+	tb.currentBet = 20
+	tb.minRaise = 20
+	tb.actingSeat = 0
+
+	a := &Player{
+		UserID:      "A",
+		Name:        "A",
+		Seat:        0,
+		Chips:       100,
+		CurrentBet:  10,
+		TotalBet:    10,
+		Cards:       []model.Card{c("A", model.SuitSpade), c("K", model.SuitSpade)},
+		Connected:   true,
+		IsSpectator: false,
+	}
+	b := &Player{
+		UserID:      "B",
+		Name:        "B",
+		Seat:        1,
+		Chips:       200,
+		CurrentBet:  20,
+		TotalBet:    20,
+		Cards:       []model.Card{c("Q", model.SuitHeart), c("Q", model.SuitClub)},
+		Connected:   true,
+		IsSpectator: false,
+	}
+
+	tb.Players[a.UserID] = a
+	tb.Players[b.UserID] = b
+	tb.dealerSeat = 0
+	tb.smallBlindAt = 0
+	tb.bigBlindAt = 1
+
+	if err := tb.ApplyAction("A", model.ActionInput{Type: model.ActionAllIn}); err != nil {
+		t.Fatalf("all-in action should succeed: %v", err)
+	}
+	if tb.phase != model.PhasePreflop {
+		t.Fatalf("hand should stay preflop awaiting response, got %s", tb.phase)
+	}
+	if tb.actingSeat != 1 {
+		t.Fatalf("acting seat should move to B, got %d", tb.actingSeat)
+	}
+	if tb.currentBet <= b.CurrentBet {
+		t.Fatalf("B should face a higher bet after A all-in")
+	}
+}

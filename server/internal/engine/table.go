@@ -461,9 +461,6 @@ func (t *Table) playersToAct() []*Player {
 			out = append(out, p)
 		}
 	}
-	if len(out) <= 1 {
-		return []*Player{}
-	}
 	return out
 }
 
@@ -557,6 +554,13 @@ func (t *Table) resetRoundContributions(exceptUser string) {
 func (t *Table) roundShouldAdvance() bool {
 	actors := t.playersToAct()
 	if len(actors) == 0 {
+		return true
+	}
+	if len(actors) == 1 {
+		// Single remaining actor still needs to respond if facing an unmatched bet.
+		if actors[0].CurrentBet < t.currentBet {
+			return false
+		}
 		return true
 	}
 	for _, p := range actors {
