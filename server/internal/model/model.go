@@ -50,6 +50,7 @@ type PlayerView struct {
 	IsConnected  bool   `json:"is_connected"`
 	IsSpectator  bool   `json:"is_spectator"`
 	JoinNextHand bool   `json:"join_next_hand"`
+	IsHost       bool   `json:"is_host"`
 	CardsCount   int    `json:"cards_count"`
 	IsDealer     bool   `json:"is_dealer"`
 	IsSmallBlind bool   `json:"is_small_blind"`
@@ -66,6 +67,7 @@ type Snapshot struct {
 	BlindSmall   int64        `json:"blind_small"`
 	BlindBig     int64        `json:"blind_big"`
 	DeckMode     string       `json:"deck_mode"`
+	HostUserID   string       `json:"host_user_id"`
 	DealerSeat   int          `json:"dealer_seat"`
 	ActingSeat   int          `json:"acting_seat"`
 	Board        []Card       `json:"board"`

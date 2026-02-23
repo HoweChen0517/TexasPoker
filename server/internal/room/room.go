@@ -28,10 +28,11 @@ type Client interface {
 }
 
 type Session struct {
-	id      string
-	table   *engine.Table
-	clients map[string]Client
-	mu      sync.Mutex
+	id         string
+	table      *engine.Table
+	clients    map[string]Client
+	hostUserID string
+	mu         sync.Mutex
 }
 
 func NewSession(roomID string) *Session {
@@ -46,6 +47,9 @@ func (s *Session) Join(c Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.clients[c.ID()] = c
+	if s.hostUserID == "" {
+		s.hostUserID = c.ID()
+	}
 	s.table.AddOrReconnectPlayer(c.ID(), c.Name(), c.BuyIn())
 	s.pushSnapshotLocked()
 }
@@ -55,6 +59,9 @@ func (s *Session) Leave(userID string) {
 	defer s.mu.Unlock()
 	delete(s.clients, userID)
 	s.table.DisconnectPlayer(userID)
+	if s.hostUserID == userID {
+		s.hostUserID = s.pickNewHostLocked()
+	}
 	s.pushSnapshotLocked()
 }
 
@@ -70,12 +77,22 @@ func (s *Session) Handle(userID string, raw []byte) error {
 
 	switch in.Type {
 	case "start_hand":
+		if userID != s.hostUserID {
+			return errors.New("only host can start hand")
+		}
 		var req struct {
 			Mode string `json:"mode"`
 		}
 		_ = json.Unmarshal(in.Payload, &req)
 		s.table.SetDeckMode(req.Mode)
 		if err := s.table.StartHand(); err != nil {
+			return err
+		}
+	case "restart_hand":
+		if userID != s.hostUserID {
+			return errors.New("only host can restart hand")
+		}
+		if err := s.table.RestartHand(); err != nil {
 			return err
 		}
 	case "action":
@@ -128,11 +145,18 @@ func (s *Session) pushError(userID, message string) {
 
 func (s *Session) pushSnapshotLocked() {
 	for userID, c := range s.clients {
-		snapshot := s.table.SnapshotFor(userID)
+		snapshot := s.table.SnapshotFor(userID, s.hostUserID)
 		out := Outbound{Type: "snapshot", Payload: snapshot}
 		payload, _ := json.Marshal(out)
 		_ = c.Send(payload)
 	}
+}
+
+func (s *Session) pickNewHostLocked() string {
+	for uid := range s.clients {
+		return uid
+	}
+	return ""
 }
 
 type Manager struct {

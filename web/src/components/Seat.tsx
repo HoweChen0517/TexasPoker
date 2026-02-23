@@ -28,9 +28,11 @@ export function Seat({ player, isYou, myCards, activeSeat, seatIndex, selectedSe
       <div className="seat-head">
         <span className="name">{player.name}</span>
         {isYou && <span className="tag">YOU</span>}
+        {player.is_host && <span className="tag">HOST</span>}
         {player.is_dealer && <span className="tag">D</span>}
         {player.is_small_blind && <span className="tag">SB</span>}
         {player.is_big_blind && <span className="tag">BB</span>}
+        {player.has_folded && <span className="tag fold-tag">FOLD</span>}
       </div>
       <div className="chips">{player.chips}</div>
       <div className="bet">Bet {player.current_bet}</div>

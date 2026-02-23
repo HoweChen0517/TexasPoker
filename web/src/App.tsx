@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CardFace } from './components/CardFace';
 import { Seat } from './components/Seat';
 import { usePokerSocket } from './hooks/usePokerSocket';
@@ -73,11 +73,43 @@ function TableView({ login }: { login: LoginState }) {
   const [amount, setAmount] = useState(40);
   const [startMode, setStartMode] = useState<'classic' | 'short'>('classic');
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
+  const [phasePop, setPhasePop] = useState('');
+  const phaseRef = useRef<string>('');
   const { state, snapshot, error, send } = usePokerSocket(apiBase, login.room, login.user, login.name, login.buyIn);
 
   const seats = useMemo(() => seatOrder(snapshot?.players ?? []), [snapshot]);
   const me = useMemo(() => (snapshot?.players ?? []).find((p) => p.user_id === login.user), [snapshot, login.user]);
   const spectators = useMemo(() => (snapshot?.players ?? []).filter((p) => p.is_spectator), [snapshot]);
+  const isHost = me?.is_host ?? false;
+
+  useEffect(() => {
+    if (!snapshot?.phase) return;
+    if (!phaseRef.current) {
+      phaseRef.current = snapshot.phase;
+      return;
+    }
+    if (phaseRef.current === snapshot.phase) return;
+    phaseRef.current = snapshot.phase;
+    const pretty = snapshot.phase.toUpperCase();
+    setPhasePop(pretty);
+    const timeout = window.setTimeout(() => setPhasePop(''), 850);
+
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = 560;
+    gain.gain.value = 0.001;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    const now = audioCtx.currentTime;
+    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+    osc.start(now);
+    osc.stop(now + 0.15);
+
+    return () => window.clearTimeout(timeout);
+  }, [snapshot?.phase]);
 
   const clickSeat = async (seat: number) => {
     setSelectedSeat(seat);
@@ -87,7 +119,7 @@ function TableView({ login }: { login: LoginState }) {
   return (
     <div className="page">
       <header className="topbar">
-        <h1>Texas Poker Doodle Table</h1>
+        <h1>Texas Poker House</h1>
         <div className="meta">
           <span>room: {login.room}</span>
           <span>user: {login.name}</span>
@@ -110,6 +142,8 @@ function TableView({ login }: { login: LoginState }) {
             <span className="pot-label">POT</span>
             <span className="pot-value">{snapshot?.pot ?? 0}</span>
           </div>
+          <div className="phase-corner">{snapshot?.phase ?? 'waiting'}</div>
+          {phasePop ? <div className="phase-pop">{phasePop}</div> : null}
 
           <div className="board">
             {(snapshot?.board ?? []).map((card, i) => (
@@ -154,14 +188,21 @@ function TableView({ login }: { login: LoginState }) {
         </section>
 
         <aside className="controls">
-          <label>
-            Start Mode
-            <select value={startMode} onChange={(e) => setStartMode(e.target.value as 'classic' | 'short')}>
-              <option value="classic">Classic</option>
-              <option value="short">Short (remove 2-5, Flush &gt; Full House)</option>
-            </select>
-          </label>
-          <button onClick={() => send('start_hand', { mode: startMode })}>Start Hand</button>
+          {isHost ? (
+            <>
+              <label>
+                Start Mode
+                <select value={startMode} onChange={(e) => setStartMode(e.target.value as 'classic' | 'short')}>
+                  <option value="classic">Classic</option>
+                  <option value="short">Short (remove 2-5, Flush &gt; Full House)</option>
+                </select>
+              </label>
+              <button onClick={() => send('start_hand', { mode: startMode })}>Start Hand</button>
+              <button onClick={() => send('restart_hand')}>Restart</button>
+            </>
+          ) : (
+            <div className="host-only">Only HOST can set mode/start/restart.</div>
+          )}
 
           {me?.is_spectator ? (
             <button onClick={() => send('join_table', { seat: selectedSeat ?? -1 })}>Join Next Hand</button>
