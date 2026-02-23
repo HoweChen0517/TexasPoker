@@ -324,6 +324,13 @@ button:hover {
   background: #efefef;
 }
 
+button:disabled {
+  background: #e4e4e4;
+  color: #888;
+  border-color: #999;
+  cursor: not-allowed;
+}
+
 input,
 select {
   width: 100%;

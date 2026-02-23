@@ -86,6 +86,45 @@ function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void 
     [snapshot]
   );
   const isHost = me?.is_host ?? false;
+  const actionState = useMemo(() => {
+    const disabledAll = {
+      fold: false,
+      check: false,
+      call: false,
+      allIn: false,
+      bet: false,
+      raise: false
+    };
+    if (!snapshot || !me) return disabledAll;
+    const isYourTurn =
+      !me.is_spectator &&
+      !me.has_folded &&
+      !me.is_all_in &&
+      me.seat === snapshot.acting_seat &&
+      snapshot.phase !== 'complete' &&
+      snapshot.phase !== 'waiting';
+    if (!isYourTurn) {
+      return { fold: true, check: true, call: true, allIn: true, bet: true, raise: true };
+    }
+
+    const callCost = Math.max(0, snapshot.current_bet - me.current_bet);
+    const canAllIn = me.chips > 0;
+    const canFold = callCost > 0;
+    const canCall = callCost > 0 && me.chips >= callCost;
+    const canCheck = callCost === 0;
+    const canBet = snapshot.current_bet === 0 && me.chips >= Math.max(snapshot.blind_big, amount);
+    const needToRaiseBy = snapshot.current_bet > 0 ? callCost + amount : amount;
+    const canRaise = snapshot.current_bet > 0 && amount >= snapshot.min_raise && me.chips >= needToRaiseBy;
+
+    return {
+      fold: !canFold,
+      check: !canCheck,
+      call: !canCall,
+      allIn: !canAllIn,
+      bet: !canBet,
+      raise: !canRaise
+    };
+  }, [snapshot, me, amount]);
 
   useEffect(() => {
     const initAudio = async () => {
@@ -254,10 +293,18 @@ function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void 
             </button>
           )}
 
-          <button onClick={() => send('action', { action: 'fold' })}>Fold</button>
-          <button onClick={() => send('action', { action: 'check' })}>Check</button>
-          <button onClick={() => send('action', { action: 'call' })}>Call</button>
-          <button onClick={() => send('action', { action: 'all_in' })}>All In</button>
+          <button disabled={actionState.fold} onClick={() => send('action', { action: 'fold' })}>
+            Fold
+          </button>
+          <button disabled={actionState.check} onClick={() => send('action', { action: 'check' })}>
+            Check
+          </button>
+          <button disabled={actionState.call} onClick={() => send('action', { action: 'call' })}>
+            Call
+          </button>
+          <button disabled={actionState.allIn} onClick={() => send('action', { action: 'all_in' })}>
+            All In
+          </button>
 
           <label>
             Raise/Bet
@@ -265,8 +312,12 @@ function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void 
           </label>
 
           <div className="actions-inline">
-            <button onClick={() => send('action', { action: 'bet', amount })}>Bet</button>
-            <button onClick={() => send('action', { action: 'raise', amount })}>Raise</button>
+            <button disabled={actionState.bet} onClick={() => send('action', { action: 'bet', amount })}>
+              Bet
+            </button>
+            <button disabled={actionState.raise} onClick={() => send('action', { action: 'raise', amount })}>
+              Raise
+            </button>
           </div>
 
           <p className="error">{error}</p>
