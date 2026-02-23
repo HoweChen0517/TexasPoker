@@ -230,6 +230,13 @@ func (t *Table) StartHand() error {
 	t.bigBlindAt = bbSeat
 	t.postBlind(sbSeat, t.SmallBlind)
 	t.postBlind(bbSeat, t.BigBlind)
+	// Posting blinds is forced, not a voluntary decision in this betting round.
+	// Big blind must still have an option when action returns preflop.
+	for _, p := range active {
+		if !p.AllIn {
+			p.ContributedRound = false
+		}
+	}
 
 	if len(active) == 2 {
 		t.actingSeat = sbSeat
