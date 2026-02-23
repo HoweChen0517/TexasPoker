@@ -74,6 +74,21 @@ func (s *Session) Leave(c Client) {
 	s.pushSnapshotLocked()
 }
 
+func (s *Session) RemoveUser(userID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.clients[userID]
+	if ok {
+		delete(s.clients, userID)
+		c.Close()
+	}
+	s.table.RemovePlayer(userID)
+	if s.hostUserID == userID {
+		s.hostUserID = s.pickNewHostLocked()
+	}
+	s.pushSnapshotLocked()
+}
+
 func (s *Session) IsEmpty() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -258,6 +273,26 @@ func (m *Manager) Dissolve(roomID, byUser string) error {
 	}
 	m.mu.Unlock()
 	return nil
+}
+
+func (m *Manager) RemoveUser(roomID, userID string) {
+	if roomID == "" {
+		roomID = "main"
+	}
+	m.mu.Lock()
+	s, ok := m.rooms[roomID]
+	m.mu.Unlock()
+	if !ok {
+		return
+	}
+	s.RemoveUser(userID)
+	if s.IsEmpty() {
+		m.mu.Lock()
+		if cur, ok := m.rooms[roomID]; ok && cur == s {
+			delete(m.rooms, roomID)
+		}
+		m.mu.Unlock()
+	}
 }
 
 func HandleWithAck(session *Session, userID string, raw []byte) {

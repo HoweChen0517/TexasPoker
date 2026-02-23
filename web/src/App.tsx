@@ -27,7 +27,7 @@ export default function App() {
   if (!login) {
     return <LoginView onSubmit={setLogin} />;
   }
-  return <TableView login={login} />;
+  return <TableView login={login} onLeave={() => setLogin(null)} />;
 }
 
 function LoginView({ onSubmit }: { onSubmit: (s: LoginState) => void }) {
@@ -69,12 +69,13 @@ function LoginView({ onSubmit }: { onSubmit: (s: LoginState) => void }) {
   );
 }
 
-function TableView({ login }: { login: LoginState }) {
+function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void }) {
   const [amount, setAmount] = useState(40);
   const [startMode, setStartMode] = useState<'classic' | 'short'>('classic');
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
   const [phasePop, setPhasePop] = useState('');
   const phaseRef = useRef<string>('');
+  const audioCtxRef = useRef<AudioContext | null>(null);
   const { state, snapshot, error, send } = usePokerSocket(apiBase, login.room, login.user, login.name, login.buyIn);
 
   const seats = useMemo(() => seatOrder(snapshot?.players ?? []), [snapshot]);
@@ -87,6 +88,28 @@ function TableView({ login }: { login: LoginState }) {
   const isHost = me?.is_host ?? false;
 
   useEffect(() => {
+    const initAudio = async () => {
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      if (audioCtxRef.current.state === 'suspended') {
+        try {
+          await audioCtxRef.current.resume();
+        } catch {
+          // ignored
+        }
+      }
+    };
+    const unlock = () => void initAudio();
+    window.addEventListener('pointerdown', unlock, { passive: true });
+    window.addEventListener('keydown', unlock);
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!snapshot?.phase) return;
     if (!phaseRef.current) {
       phaseRef.current = snapshot.phase;
@@ -97,20 +120,32 @@ function TableView({ login }: { login: LoginState }) {
     const pretty = snapshot.phase.toUpperCase();
     setPhasePop(pretty);
     const timeout = window.setTimeout(() => setPhasePop(''), 850);
-
-    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.value = 560;
-    gain.gain.value = 0.001;
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    const now = audioCtx.currentTime;
-    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
-    osc.start(now);
-    osc.stop(now + 0.15);
+    const playCue = async () => {
+      try {
+        if (!audioCtxRef.current) {
+          audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        }
+        if (audioCtxRef.current.state === 'suspended') {
+          await audioCtxRef.current.resume();
+        }
+        const audioCtx = audioCtxRef.current;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.value = 640;
+        gain.gain.value = 0.001;
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        const now = audioCtx.currentTime;
+        gain.gain.exponentialRampToValueAtTime(0.09, now + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+        osc.start(now);
+        osc.stop(now + 0.16);
+      } catch {
+        // ignored
+      }
+    };
+    void playCue();
 
     return () => window.clearTimeout(timeout);
   }, [snapshot?.phase]);
@@ -235,6 +270,14 @@ function TableView({ login }: { login: LoginState }) {
           </div>
 
           <p className="error">{error}</p>
+          <button
+            onClick={async () => {
+              await send('leave_room');
+              onLeave();
+            }}
+          >
+            Exit Room
+          </button>
         </aside>
       </main>
     </div>

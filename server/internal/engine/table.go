@@ -94,6 +94,22 @@ func (t *Table) DisconnectPlayer(userID string) {
 	}
 }
 
+func (t *Table) RemovePlayer(userID string) {
+	delete(t.Players, userID)
+	if t.dealerSeat >= 0 && t.playerBySeat(t.dealerSeat) == nil {
+		t.dealerSeat = -1
+	}
+	if t.actingSeat >= 0 && t.playerBySeat(t.actingSeat) == nil {
+		t.actingSeat = -1
+	}
+	if t.smallBlindAt >= 0 && t.playerBySeat(t.smallBlindAt) == nil {
+		t.smallBlindAt = -1
+	}
+	if t.bigBlindAt >= 0 && t.playerBySeat(t.bigBlindAt) == nil {
+		t.bigBlindAt = -1
+	}
+}
+
 func (t *Table) SetDeckMode(mode string) {
 	switch mode {
 	case "short":

@@ -121,6 +121,12 @@ func NewActionHandler(m *room.Manager) http.HandlerFunc {
 			_, _ = w.Write([]byte(`{"ok":true}`))
 			return
 		}
+		if msgType == "leave_room" {
+			m.RemoveUser(roomID, userID)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+			return
+		}
 		msg, _ := json.Marshal(payload)
 		session := m.Get(roomID)
 		room.HandleWithAck(session, userID, msg)

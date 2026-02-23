@@ -11,7 +11,8 @@
 
 body {
   margin: 0;
-  font-family: 'Special Elite', serif;
+  font-family: 'Noto Sans SC', 'Special Elite', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  line-height: 1.35;
   color: var(--ink);
   background: repeating-linear-gradient(45deg, #f7f7f4 0 12px, #f2f2ec 12px 24px);
 }
@@ -124,18 +125,20 @@ body {
 }
 
 .phase-pop {
-  position: absolute;
+  position: fixed;
   left: 50%;
-  top: 38%;
+  top: 34%;
   transform: translate(-50%, -50%);
-  font-size: clamp(24px, 6vw, 44px);
+  font-size: clamp(34px, 8vw, 64px);
   font-family: 'Rock Salt', cursive;
   background: #fff;
   border: 3px solid #111;
   border-radius: 12px;
-  padding: 8px 14px;
+  padding: 10px 18px;
   animation: phase-pop 0.85s ease forwards;
   pointer-events: none;
+  z-index: 9999;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
 }
 
 @keyframes phase-pop {
@@ -211,6 +214,13 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
+  line-height: 1.2;
+}
+
+.name {
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .tag {
