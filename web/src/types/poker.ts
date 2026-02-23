@@ -19,6 +19,7 @@ export type PlayerView = {
   join_next_hand: boolean;
   is_host: boolean;
   cards_count: number;
+  shown_cards: Card[];
   is_dealer: boolean;
   is_small_blind: boolean;
   is_big_blind: boolean;
@@ -28,6 +29,9 @@ export type WinnerView = {
   user_id: string;
   name: string;
   amount: number;
+  pot_share: number;
+  net_gain: number;
+  contribution: number;
   hand_tag: string;
 };
 
@@ -42,6 +46,7 @@ export type Snapshot = {
   blind_big: number;
   deck_mode: 'classic' | 'short';
   host_user_id: string;
+  can_reveal: boolean;
   dealer_seat: number;
   acting_seat: number;
   board: Card[];

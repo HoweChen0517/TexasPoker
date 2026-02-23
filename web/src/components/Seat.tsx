@@ -39,7 +39,9 @@ export function Seat({ player, isYou, myCards, activeSeat, seatIndex, selectedSe
       <div className="cards-inline">
         {isYou
           ? myCards.map((c, i) => <CardFace key={`${c.suit}${c.rank}-${i}`} card={c} />)
-          : Array.from({ length: Math.min(2, player.cards_count) }).map((_, i) => <CardFace key={`hidden-${i}`} hidden />)}
+          : player.shown_cards?.length
+            ? player.shown_cards.map((c, i) => <CardFace key={`${c.suit}${c.rank}-shown-${i}`} card={c} />)
+            : Array.from({ length: Math.min(2, player.cards_count) }).map((_, i) => <CardFace key={`hidden-${i}`} hidden />)}
       </div>
     </button>
   );

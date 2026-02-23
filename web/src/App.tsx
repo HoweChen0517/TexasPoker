@@ -70,7 +70,7 @@ function LoginView({ onSubmit }: { onSubmit: (s: LoginState) => void }) {
 }
 
 function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void }) {
-  const [amount, setAmount] = useState(40);
+  const [amountInput, setAmountInput] = useState('40');
   const [startMode, setStartMode] = useState<'classic' | 'short'>('classic');
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
   const [phasePop, setPhasePop] = useState('');
@@ -86,6 +86,8 @@ function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void 
     [snapshot]
   );
   const isHost = me?.is_host ?? false;
+  const amount = Number.parseInt(amountInput, 10);
+  const hasValidAmount = Number.isFinite(amount) && amount > 0;
   const actionState = useMemo(() => {
     const disabledAll = {
       fold: false,
@@ -112,9 +114,9 @@ function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void 
     const canFold = callCost > 0;
     const canCall = callCost > 0 && me.chips >= callCost;
     const canCheck = callCost === 0;
-    const canBet = snapshot.current_bet === 0 && me.chips >= Math.max(snapshot.blind_big, amount);
+    const canBet = hasValidAmount && snapshot.current_bet === 0 && me.chips >= Math.max(snapshot.blind_big, amount);
     const needToRaiseBy = snapshot.current_bet > 0 ? callCost + amount : amount;
-    const canRaise = snapshot.current_bet > 0 && amount >= snapshot.min_raise && me.chips >= needToRaiseBy;
+    const canRaise = hasValidAmount && snapshot.current_bet > 0 && amount >= snapshot.min_raise && me.chips >= needToRaiseBy;
 
     return {
       fold: !canFold,
@@ -124,7 +126,7 @@ function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void 
       bet: !canBet,
       raise: !canRaise
     };
-  }, [snapshot, me, amount]);
+  }, [snapshot, me, amount, hasValidAmount]);
 
   useEffect(() => {
     const initAudio = async () => {
@@ -255,7 +257,7 @@ function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void 
             <div className="winner-box">
               {snapshot.winners.map((w) => (
                 <div key={w.user_id}>
-                  {w.name} +{w.amount} ({w.hand_tag})
+                  {w.name} 收池 {w.pot_share} / 净赢 {w.net_gain >= 0 ? `+${w.net_gain}` : w.net_gain} ({w.hand_tag})
                 </div>
               ))}
             </div>
@@ -292,6 +294,9 @@ function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void 
               Change Seat
             </button>
           )}
+          <button disabled={!snapshot?.can_reveal} onClick={() => send('reveal_cards')}>
+            Reveal My Cards
+          </button>
 
           <button disabled={actionState.fold} onClick={() => send('action', { action: 'fold' })}>
             Fold
@@ -308,14 +313,20 @@ function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void 
 
           <label>
             Raise/Bet
-            <input type="number" min={1} value={amount} onChange={(e) => setAmount(Number(e.target.value || 1))} />
+            <input
+              type="text"
+              inputMode="numeric"
+              placeholder="Enter amount"
+              value={amountInput}
+              onChange={(e) => setAmountInput(e.target.value.replace(/[^\d]/g, ''))}
+            />
           </label>
 
           <div className="actions-inline">
-            <button disabled={actionState.bet} onClick={() => send('action', { action: 'bet', amount })}>
+            <button disabled={actionState.bet || !hasValidAmount} onClick={() => send('action', { action: 'bet', amount })}>
               Bet
             </button>
-            <button disabled={actionState.raise} onClick={() => send('action', { action: 'raise', amount })}>
+            <button disabled={actionState.raise || !hasValidAmount} onClick={() => send('action', { action: 'raise', amount })}>
               Raise
             </button>
           </div>

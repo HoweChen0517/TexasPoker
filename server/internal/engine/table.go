@@ -23,6 +23,7 @@ type Player struct {
 	IsSpectator      bool
 	JoinNextHand     bool
 	RequestedSeat    int
+	Revealed         bool
 }
 
 type Table struct {
@@ -46,6 +47,7 @@ type Table struct {
 	shortDeck    bool
 	smallBlindAt int
 	bigBlindAt   int
+	canReveal    bool
 }
 
 func NewTable(roomID string) *Table {
@@ -62,6 +64,7 @@ func NewTable(roomID string) *Table {
 		deckMode:     "classic",
 		smallBlindAt: -1,
 		bigBlindAt:   -1,
+		canReveal:    false,
 	}
 }
 
@@ -197,6 +200,7 @@ func (t *Table) StartHand() error {
 	t.deck = newDeck(t.shortDeck)
 	t.winners = nil
 	t.roundMessage = ""
+	t.canReveal = false
 	t.currentBet = 0
 	t.minRaise = t.BigBlind
 
@@ -207,6 +211,7 @@ func (t *Table) StartHand() error {
 		p.Folded = true
 		p.AllIn = false
 		p.ContributedRound = false
+		p.Revealed = false
 	}
 	for _, p := range active {
 		p.Folded = false
@@ -391,6 +396,12 @@ func (t *Table) SnapshotFor(userID, hostUserID string) model.Snapshot {
 			JoinNextHand: p.JoinNextHand,
 			IsHost:       p.UserID == hostUserID,
 			CardsCount:   len(p.Cards),
+			ShownCards: func() []model.Card {
+				if p.Revealed {
+					return append([]model.Card(nil), p.Cards...)
+				}
+				return nil
+			}(),
 			IsDealer:     !p.IsSpectator && p.Seat == t.dealerSeat,
 			IsSmallBlind: !p.IsSpectator && p.Seat == t.smallBlindSeat(),
 			IsBigBlind:   !p.IsSpectator && p.Seat == t.bigBlindSeat(),
@@ -417,6 +428,7 @@ func (t *Table) SnapshotFor(userID, hostUserID string) model.Snapshot {
 	if p, ok := t.Players[userID]; ok {
 		s.YourCards = append([]model.Card(nil), p.Cards...)
 	}
+	s.CanReveal = t.canReveal && len(s.YourCards) > 0
 	return s
 }
 
@@ -631,9 +643,18 @@ func (t *Table) resolveIfOnlyOneAlive() bool {
 	}
 	w := alive[0]
 	w.Chips += t.pot
-	t.winners = []model.WinnerView{{UserID: w.UserID, Name: w.Name, Amount: t.pot, HandTag: "Won by fold"}}
+	t.winners = []model.WinnerView{{
+		UserID:       w.UserID,
+		Name:         w.Name,
+		Amount:       t.pot,
+		PotShare:     t.pot,
+		Contribution: w.TotalBet,
+		NetGain:      t.pot - w.TotalBet,
+		HandTag:      "Won by fold",
+	}}
 	t.roundMessage = fmt.Sprintf("%s wins %d by fold", w.Name, t.pot)
 	t.phase = model.PhaseComplete
+	t.canReveal = true
 	t.pot = 0
 	t.actingSeat = -1
 	return true
@@ -649,6 +670,7 @@ func (t *Table) resolveShowdown() {
 	handRanks := map[string]HandRank{}
 	for _, p := range alive {
 		handRanks[p.UserID] = bestOfSeven(append(append([]model.Card{}, p.Cards...), t.board...), t.shortDeck)
+		p.Revealed = true
 	}
 
 	players := t.playersSorted()
@@ -729,10 +751,19 @@ func (t *Table) resolveShowdown() {
 		}
 		p.Chips += amount
 		tag := handRanks[p.UserID].Label
-		t.winners = append(t.winners, model.WinnerView{UserID: p.UserID, Name: p.Name, Amount: amount, HandTag: tag})
+		t.winners = append(t.winners, model.WinnerView{
+			UserID:       p.UserID,
+			Name:         p.Name,
+			Amount:       amount,
+			PotShare:     amount,
+			Contribution: p.TotalBet,
+			NetGain:      amount - p.TotalBet,
+			HandTag:      tag,
+		})
 	}
 	t.roundMessage = "Showdown complete"
 	t.phase = model.PhaseComplete
+	t.canReveal = false
 	t.pot = 0
 	t.actingSeat = -1
 }
@@ -798,4 +829,20 @@ func (t *Table) RestartHand() error {
 		t.roundMessage = "Hand restarted by host"
 	}
 	return t.StartHand()
+}
+
+func (t *Table) RevealCards(userID string) error {
+	if !t.canReveal || t.phase != model.PhaseComplete {
+		return errors.New("reveal is not available")
+	}
+	p, ok := t.Players[userID]
+	if !ok {
+		return errors.New("player not found")
+	}
+	if len(p.Cards) == 0 {
+		return errors.New("no cards to reveal")
+	}
+	p.Revealed = true
+	t.roundMessage = fmt.Sprintf("%s revealed cards", p.Name)
+	return nil
 }

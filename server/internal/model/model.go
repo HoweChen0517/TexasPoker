@@ -52,6 +52,7 @@ type PlayerView struct {
 	JoinNextHand bool   `json:"join_next_hand"`
 	IsHost       bool   `json:"is_host"`
 	CardsCount   int    `json:"cards_count"`
+	ShownCards   []Card `json:"shown_cards"`
 	IsDealer     bool   `json:"is_dealer"`
 	IsSmallBlind bool   `json:"is_small_blind"`
 	IsBigBlind   bool   `json:"is_big_blind"`
@@ -68,6 +69,7 @@ type Snapshot struct {
 	BlindBig     int64        `json:"blind_big"`
 	DeckMode     string       `json:"deck_mode"`
 	HostUserID   string       `json:"host_user_id"`
+	CanReveal    bool         `json:"can_reveal"`
 	DealerSeat   int          `json:"dealer_seat"`
 	ActingSeat   int          `json:"acting_seat"`
 	Board        []Card       `json:"board"`
@@ -78,10 +80,13 @@ type Snapshot struct {
 }
 
 type WinnerView struct {
-	UserID  string `json:"user_id"`
-	Name    string `json:"name"`
-	Amount  int64  `json:"amount"`
-	HandTag string `json:"hand_tag"`
+	UserID       string `json:"user_id"`
+	Name         string `json:"name"`
+	Amount       int64  `json:"amount"`
+	PotShare     int64  `json:"pot_share"`
+	NetGain      int64  `json:"net_gain"`
+	Contribution int64  `json:"contribution"`
+	HandTag      string `json:"hand_tag"`
 }
 
 type ActionInput struct {

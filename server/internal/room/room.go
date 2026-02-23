@@ -155,6 +155,10 @@ func (s *Session) Handle(userID string, raw []byte) error {
 		if err := s.table.ChangeSeat(userID, req.Seat); err != nil {
 			return err
 		}
+	case "reveal_cards":
+		if err := s.table.RevealCards(userID); err != nil {
+			return err
+		}
 	default:
 		return errors.New("unknown message type")
 	}
