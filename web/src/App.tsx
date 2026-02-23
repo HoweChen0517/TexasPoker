@@ -80,6 +80,10 @@ function TableView({ login }: { login: LoginState }) {
   const seats = useMemo(() => seatOrder(snapshot?.players ?? []), [snapshot]);
   const me = useMemo(() => (snapshot?.players ?? []).find((p) => p.user_id === login.user), [snapshot, login.user]);
   const spectators = useMemo(() => (snapshot?.players ?? []).filter((p) => p.is_spectator), [snapshot]);
+  const hostName = useMemo(
+    () => (snapshot?.players ?? []).find((p) => p.user_id === snapshot?.host_user_id)?.name || snapshot?.host_user_id || '-',
+    [snapshot]
+  );
   const isHost = me?.is_host ?? false;
 
   useEffect(() => {
@@ -123,6 +127,7 @@ function TableView({ login }: { login: LoginState }) {
         <div className="meta">
           <span>room: {login.room}</span>
           <span>user: {login.name}</span>
+          <span>host: {hostName}</span>
           <span>conn: {state}</span>
           <span>mode: {snapshot?.deck_mode ?? 'classic'}</span>
         </div>
@@ -142,31 +147,32 @@ function TableView({ login }: { login: LoginState }) {
             <span className="pot-label">POT</span>
             <span className="pot-value">{snapshot?.pot ?? 0}</span>
           </div>
-          <div className="phase-corner">{snapshot?.phase ?? 'waiting'}</div>
           {phasePop ? <div className="phase-pop">{phasePop}</div> : null}
 
-          <div className="board">
-            {(snapshot?.board ?? []).map((card, i) => (
-              <CardFace key={`${card.suit}${card.rank}-${i}`} card={card} />
-            ))}
-            {Array.from({ length: Math.max(0, 5 - (snapshot?.board?.length ?? 0)) }).map((_, i) => (
-              <CardFace key={`empty-${i}`} hidden />
-            ))}
-          </div>
-
-          <div className="seats-grid">
-            {seats.map((p, idx) => (
-              <Seat
-                key={`seat-${idx}`}
-                player={p}
-                isYou={p?.user_id === login.user}
-                myCards={snapshot?.your_cards ?? []}
-                activeSeat={snapshot?.acting_seat ?? -1}
-                seatIndex={idx}
-                selectedSeat={selectedSeat}
-                onSelectSeat={clickSeat}
-              />
-            ))}
+          <div className="table-surface">
+            <div className="board">
+              {(snapshot?.board ?? []).map((card, i) => (
+                <CardFace key={`${card.suit}${card.rank}-${i}`} card={card} />
+              ))}
+              {Array.from({ length: Math.max(0, 5 - (snapshot?.board?.length ?? 0)) }).map((_, i) => (
+                <CardFace key={`empty-${i}`} hidden />
+              ))}
+            </div>
+            <div className="seats-grid">
+              {seats.map((p, idx) => (
+                <Seat
+                  key={`seat-${idx}`}
+                  player={p}
+                  isYou={p?.user_id === login.user}
+                  myCards={snapshot?.your_cards ?? []}
+                  activeSeat={snapshot?.acting_seat ?? -1}
+                  seatIndex={idx}
+                  selectedSeat={selectedSeat}
+                  onSelectSeat={clickSeat}
+                />
+              ))}
+            </div>
+            <div className="phase-corner">{snapshot?.phase ?? 'waiting'}</div>
           </div>
 
           <div className="message">{snapshot?.round_message ?? 'Waiting for players...'}</div>
@@ -199,6 +205,7 @@ function TableView({ login }: { login: LoginState }) {
               </label>
               <button onClick={() => send('start_hand', { mode: startMode })}>Start Hand</button>
               <button onClick={() => send('restart_hand')}>Restart</button>
+              <button onClick={() => send('dissolve_room')}>Dissolve Room</button>
             </>
           ) : (
             <div className="host-only">Only HOST can set mode/start/restart.</div>

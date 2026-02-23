@@ -3,6 +3,7 @@ package room
 import (
 	"encoding/json"
 	"errors"
+	"sort"
 	"sync"
 	"time"
 
@@ -25,6 +26,7 @@ type Client interface {
 	Name() string
 	BuyIn() int64
 	Send([]byte) error
+	Close()
 }
 
 type Session struct {
@@ -46,6 +48,9 @@ func NewSession(roomID string) *Session {
 func (s *Session) Join(c Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if prev, ok := s.clients[c.ID()]; ok && prev != c {
+		prev.Close()
+	}
 	s.clients[c.ID()] = c
 	if s.hostUserID == "" {
 		s.hostUserID = c.ID()
@@ -54,15 +59,25 @@ func (s *Session) Join(c Client) {
 	s.pushSnapshotLocked()
 }
 
-func (s *Session) Leave(userID string) {
+func (s *Session) Leave(c Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.clients, userID)
-	s.table.DisconnectPlayer(userID)
-	if s.hostUserID == userID {
+	current, ok := s.clients[c.ID()]
+	if !ok || current != c {
+		return
+	}
+	delete(s.clients, c.ID())
+	s.table.DisconnectPlayer(c.ID())
+	if s.hostUserID == c.ID() {
 		s.hostUserID = s.pickNewHostLocked()
 	}
 	s.pushSnapshotLocked()
+}
+
+func (s *Session) IsEmpty() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.clients) == 0
 }
 
 func (s *Session) Handle(userID string, raw []byte) error {
@@ -133,6 +148,23 @@ func (s *Session) Handle(userID string, raw []byte) error {
 	return nil
 }
 
+func (s *Session) Dissolve(byUser string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if byUser != s.hostUserID {
+		return errors.New("only host can dissolve room")
+	}
+	out := Outbound{Type: "error", Payload: map[string]string{"message": "room dissolved by host"}}
+	payload, _ := json.Marshal(out)
+	for _, c := range s.clients {
+		_ = c.Send(payload)
+		c.Close()
+	}
+	s.clients = map[string]Client{}
+	s.hostUserID = ""
+	return nil
+}
+
 func (s *Session) pushError(userID, message string) {
 	c, ok := s.clients[userID]
 	if !ok {
@@ -153,10 +185,15 @@ func (s *Session) pushSnapshotLocked() {
 }
 
 func (s *Session) pickNewHostLocked() string {
-	for uid := range s.clients {
-		return uid
+	if len(s.clients) == 0 {
+		return ""
 	}
-	return ""
+	ids := make([]string, 0, len(s.clients))
+	for uid := range s.clients {
+		ids = append(ids, uid)
+	}
+	sort.Strings(ids)
+	return ids[0]
 }
 
 type Manager struct {
@@ -180,6 +217,47 @@ func (m *Manager) Get(roomID string) *Session {
 	s := NewSession(roomID)
 	m.rooms[roomID] = s
 	return s
+}
+
+func (m *Manager) Leave(roomID string, c Client) {
+	if roomID == "" {
+		roomID = "main"
+	}
+	m.mu.Lock()
+	s, ok := m.rooms[roomID]
+	m.mu.Unlock()
+	if !ok {
+		return
+	}
+	s.Leave(c)
+	if s.IsEmpty() {
+		m.mu.Lock()
+		if cur, ok := m.rooms[roomID]; ok && cur == s {
+			delete(m.rooms, roomID)
+		}
+		m.mu.Unlock()
+	}
+}
+
+func (m *Manager) Dissolve(roomID, byUser string) error {
+	if roomID == "" {
+		roomID = "main"
+	}
+	m.mu.Lock()
+	s, ok := m.rooms[roomID]
+	m.mu.Unlock()
+	if !ok {
+		return errors.New("room not found")
+	}
+	if err := s.Dissolve(byUser); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	if cur, ok := m.rooms[roomID]; ok && cur == s {
+		delete(m.rooms, roomID)
+	}
+	m.mu.Unlock()
+	return nil
 }
 
 func HandleWithAck(session *Session, userID string, raw []byte) {

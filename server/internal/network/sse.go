@@ -66,7 +66,7 @@ func NewEventsHandler(m *room.Manager) http.HandlerFunc {
 		session := m.Get(roomID)
 		session.Join(client)
 		defer func() {
-			session.Leave(client.userID)
+			m.Leave(roomID, client)
 			client.Close()
 		}()
 
@@ -109,6 +109,16 @@ func NewActionHandler(m *room.Manager) http.HandlerFunc {
 		var payload map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		msgType, _ := payload["type"].(string)
+		if msgType == "dissolve_room" {
+			if err := m.Dissolve(roomID, userID); err != nil {
+				http.Error(w, err.Error(), http.StatusForbidden)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
 			return
 		}
 		msg, _ := json.Marshal(payload)
