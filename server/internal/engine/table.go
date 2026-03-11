@@ -823,6 +823,9 @@ func (t *Table) blindSeats(activeCount int) (int, int) {
 }
 
 func (t *Table) firstToActPreflop(activeCount int) int {
+	if t.shortDeck {
+		return t.firstToActFromSmallBlind()
+	}
 	if activeCount == 2 {
 		return t.smallBlindAt
 	}
@@ -830,7 +833,18 @@ func (t *Table) firstToActPreflop(activeCount int) int {
 }
 
 func (t *Table) firstToActPostflop() int {
+	if t.shortDeck {
+		return t.firstToActFromSmallBlind()
+	}
 	return t.nextSeatFrom(t.dealerSeat, t.isEligibleToAct)
+}
+
+func (t *Table) firstToActFromSmallBlind() int {
+	sb := t.playerBySeat(t.smallBlindAt)
+	if t.isEligibleToAct(sb) {
+		return t.smallBlindAt
+	}
+	return t.nextSeatFrom(t.smallBlindAt, t.isEligibleToAct)
 }
 
 func (t *Table) RestartHand() error {
