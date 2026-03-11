@@ -219,18 +219,9 @@ func (t *Table) StartHand() error {
 	}
 
 	t.dealerSeat = t.nextSeatFrom(t.dealerSeat, func(p *Player) bool {
-		return !p.Folded && !p.IsSpectator && p.Chips >= 0 && len(p.Cards) > 0
+		return t.isEligibleForHand(p)
 	})
-	sbSeat := -1
-	bbSeat := -1
-	if len(active) == 2 {
-		// Heads-up: dealer is small blind and acts first preflop.
-		sbSeat = t.dealerSeat
-		bbSeat = t.nextSeatFrom(sbSeat, func(p *Player) bool { return !p.Folded && !p.IsSpectator && len(p.Cards) > 0 })
-	} else {
-		sbSeat = t.nextSeatFrom(t.dealerSeat, func(p *Player) bool { return !p.Folded && !p.IsSpectator && len(p.Cards) > 0 })
-		bbSeat = t.nextSeatFrom(sbSeat, func(p *Player) bool { return !p.Folded && !p.IsSpectator && len(p.Cards) > 0 })
-	}
+	sbSeat, bbSeat := t.blindSeats(len(active))
 	t.smallBlindAt = sbSeat
 	t.bigBlindAt = bbSeat
 	t.postBlind(sbSeat, t.SmallBlind)
@@ -243,13 +234,7 @@ func (t *Table) StartHand() error {
 		}
 	}
 
-	if len(active) == 2 {
-		t.actingSeat = sbSeat
-	} else {
-		t.actingSeat = t.nextSeatFrom(bbSeat, func(p *Player) bool {
-			return !p.Folded && !p.AllIn && !p.IsSpectator && len(p.Cards) > 0
-		})
-	}
+	t.actingSeat = t.firstToActPreflop(len(active))
 	t.roundMessage = "Preflop started"
 	return nil
 }
@@ -357,10 +342,12 @@ func (t *Table) ApplyAction(userID string, action model.ActionInput) error {
 		return errors.New("unsupported action")
 	}
 
+	advancedStreet := false
 	if t.resolveIfOnlyOneAlive() {
 		return nil
 	}
 	for t.roundShouldAdvance() {
+		advancedStreet = true
 		t.advanceStreet()
 		if t.resolveIfOnlyOneAlive() {
 			return nil
@@ -373,6 +360,9 @@ func (t *Table) ApplyAction(userID string, action model.ActionInput) error {
 		if len(t.playersToAct()) != 0 {
 			break
 		}
+	}
+	if advancedStreet {
+		return nil
 	}
 	t.actingSeat = t.nextSeatFrom(t.actingSeat, func(np *Player) bool {
 		return !np.Folded && !np.AllIn && !np.IsSpectator && len(np.Cards) > 0
@@ -625,15 +615,7 @@ func (t *Table) advanceStreet() {
 		t.actingSeat = -1
 		return
 	}
-	start := t.nextSeatFrom(t.dealerSeat, func(p *Player) bool {
-		return !p.Folded && !p.AllIn && !p.IsSpectator && len(p.Cards) > 0
-	})
-	t.actingSeat = t.nextSeatFrom(start, func(p *Player) bool {
-		return !p.Folded && !p.AllIn && !p.IsSpectator && len(p.Cards) > 0
-	})
-	if start >= 0 {
-		t.actingSeat = start
-	}
+	t.actingSeat = t.firstToActPostflop()
 }
 
 func (t *Table) resolveIfOnlyOneAlive() bool {
@@ -815,6 +797,40 @@ func (t *Table) assignSeat(p *Player, requested int) error {
 
 func (t *Table) isHandRunning() bool {
 	return t.phase != model.PhaseWaiting && t.phase != model.PhaseComplete
+}
+
+func (t *Table) CanManagePlayers() bool {
+	return !t.isHandRunning()
+}
+
+func (t *Table) isEligibleForHand(p *Player) bool {
+	return p != nil && !p.Folded && !p.IsSpectator && len(p.Cards) > 0
+}
+
+func (t *Table) isEligibleToAct(p *Player) bool {
+	return t.isEligibleForHand(p) && !p.AllIn
+}
+
+func (t *Table) blindSeats(activeCount int) (int, int) {
+	if activeCount == 2 {
+		sbSeat := t.dealerSeat
+		bbSeat := t.nextSeatFrom(sbSeat, t.isEligibleForHand)
+		return sbSeat, bbSeat
+	}
+	sbSeat := t.nextSeatFrom(t.dealerSeat, t.isEligibleForHand)
+	bbSeat := t.nextSeatFrom(sbSeat, t.isEligibleForHand)
+	return sbSeat, bbSeat
+}
+
+func (t *Table) firstToActPreflop(activeCount int) int {
+	if activeCount == 2 {
+		return t.smallBlindAt
+	}
+	return t.nextSeatFrom(t.bigBlindAt, t.isEligibleToAct)
+}
+
+func (t *Table) firstToActPostflop() int {
+	return t.nextSeatFrom(t.dealerSeat, t.isEligibleToAct)
 }
 
 func (t *Table) RestartHand() error {

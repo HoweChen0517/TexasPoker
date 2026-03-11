@@ -81,6 +81,7 @@ function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void 
   const seats = useMemo(() => seatOrder(snapshot?.players ?? []), [snapshot]);
   const me = useMemo(() => (snapshot?.players ?? []).find((p) => p.user_id === login.user), [snapshot, login.user]);
   const spectators = useMemo(() => (snapshot?.players ?? []).filter((p) => p.is_spectator), [snapshot]);
+  const selectedPlayer = useMemo(() => (selectedSeat === null ? null : seats[selectedSeat] ?? null), [selectedSeat, seats]);
   const hostName = useMemo(
     () => (snapshot?.players ?? []).find((p) => p.user_id === snapshot?.host_user_id)?.name || snapshot?.host_user_id || '-',
     [snapshot]
@@ -127,6 +128,13 @@ function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void 
       raise: !canRaise
     };
   }, [snapshot, me, amount, hasValidAmount]);
+  const canRemoveSelected = Boolean(
+    isHost &&
+      snapshot &&
+      (snapshot.phase === 'waiting' || snapshot.phase === 'complete') &&
+      selectedPlayer &&
+      selectedPlayer.user_id !== login.user
+  );
 
   useEffect(() => {
     const initAudio = async () => {
@@ -193,7 +201,6 @@ function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void 
 
   const clickSeat = async (seat: number) => {
     setSelectedSeat(seat);
-    await send('set_seat', { seat });
   };
 
   return (
@@ -294,6 +301,12 @@ function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void 
               Change Seat
             </button>
           )}
+          <button
+            disabled={!canRemoveSelected}
+            onClick={() => selectedPlayer && send('remove_player', { user_id: selectedPlayer.user_id })}
+          >
+            {selectedPlayer ? `Remove ${selectedPlayer.name}` : 'Remove Player'}
+          </button>
           <button disabled={!snapshot?.can_reveal} onClick={() => send('reveal_cards')}>
             Reveal My Cards
           </button>

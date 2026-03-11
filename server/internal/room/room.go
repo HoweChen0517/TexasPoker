@@ -159,6 +159,33 @@ func (s *Session) Handle(userID string, raw []byte) error {
 		if err := s.table.RevealCards(userID); err != nil {
 			return err
 		}
+	case "remove_player":
+		if userID != s.hostUserID {
+			return errors.New("only host can remove players")
+		}
+		if !s.table.CanManagePlayers() {
+			return errors.New("can only remove players between hands")
+		}
+		var req struct {
+			UserID string `json:"user_id"`
+		}
+		if err := json.Unmarshal(in.Payload, &req); err != nil {
+			return err
+		}
+		if req.UserID == "" {
+			return errors.New("missing player")
+		}
+		if req.UserID == userID {
+			return errors.New("host cannot remove self")
+		}
+		if _, ok := s.table.Players[req.UserID]; !ok {
+			return errors.New("player not found")
+		}
+		if c, ok := s.clients[req.UserID]; ok {
+			delete(s.clients, req.UserID)
+			c.Close()
+		}
+		s.table.RemovePlayer(req.UserID)
 	default:
 		return errors.New("unknown message type")
 	}
