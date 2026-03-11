@@ -324,6 +324,14 @@ button:hover {
   background: #efefef;
 }
 
+button.secondary {
+  background: #f1f1eb;
+}
+
+button.secondary:hover {
+  background: #e5e5dc;
+}
+
 button:disabled {
   background: #e4e4e4;
   color: #888;

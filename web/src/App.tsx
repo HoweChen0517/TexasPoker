@@ -13,6 +13,82 @@ type LoginState = {
   buyIn: number;
 };
 
+const LOGIN_STORAGE_KEY = 'texaspoker.login';
+
+function randomUserID() {
+  return `u${Math.floor(Math.random() * 100000)}`;
+}
+
+function defaultLoginState(): LoginState {
+  return {
+    room: 'main',
+    user: randomUserID(),
+    name: '',
+    buyIn: 2000
+  };
+}
+
+function readStoredLogin(): LoginState | null {
+  try {
+    const raw = window.localStorage.getItem(LOGIN_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<LoginState>;
+    if (!parsed.user) return null;
+    return {
+      room: parsed.room || 'main',
+      user: parsed.user,
+      name: parsed.name || '',
+      buyIn: Math.max(100, Number(parsed.buyIn) || 2000)
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readLoginFromLocation(): Partial<LoginState> {
+  const params = new URLSearchParams(window.location.search);
+  const buyIn = Number(params.get('buyin'));
+  return {
+    room: params.get('room') || undefined,
+    user: params.get('user') || undefined,
+    name: params.get('name') || undefined,
+    buyIn: Number.isFinite(buyIn) && buyIn > 0 ? buyIn : undefined
+  };
+}
+
+function resolveInitialLogin(): LoginState {
+  const stored = readStoredLogin();
+  const defaults = defaultLoginState();
+  const fromURL = readLoginFromLocation();
+  return {
+    room: fromURL.room || stored?.room || defaults.room,
+    user: fromURL.user || stored?.user || defaults.user,
+    name: fromURL.name || stored?.name || defaults.name,
+    buyIn: Math.max(100, fromURL.buyIn || stored?.buyIn || defaults.buyIn)
+  };
+}
+
+function persistLogin(login: LoginState) {
+  const normalized = {
+    room: login.room || 'main',
+    user: login.user || randomUserID(),
+    name: login.name || login.user,
+    buyIn: Math.max(100, login.buyIn)
+  };
+  window.localStorage.setItem(LOGIN_STORAGE_KEY, JSON.stringify(normalized))
+  const params = new URLSearchParams(window.location.search);
+  params.set('room', normalized.room);
+  params.set('user', normalized.user);
+  params.set('name', normalized.name);
+  params.set('buyin', String(normalized.buyIn));
+  window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+}
+
+function clearPersistedLogin() {
+  window.localStorage.removeItem(LOGIN_STORAGE_KEY);
+  window.history.replaceState(null, '', window.location.pathname);
+}
+
 function seatOrder(players: PlayerView[]) {
   const slots: Array<PlayerView | undefined> = Array.from({ length: 9 }, () => undefined);
   players.forEach((p) => {
@@ -24,18 +100,30 @@ function seatOrder(players: PlayerView[]) {
 export default function App() {
   const [login, setLogin] = useState<LoginState | null>(null);
 
+  const handleLogin = (next: LoginState) => {
+    persistLogin(next);
+    setLogin(next);
+  };
+
+  const handleLeave = () => {
+    setLogin(null);
+  };
+
   if (!login) {
-    return <LoginView onSubmit={setLogin} />;
+    return <LoginView onSubmit={handleLogin} />;
   }
-  return <TableView login={login} onLeave={() => setLogin(null)} />;
+  return <TableView login={login} onLeave={handleLeave} onResetIdentity={() => {
+    clearPersistedLogin();
+    setLogin(null);
+  }} />;
 }
 
 function LoginView({ onSubmit }: { onSubmit: (s: LoginState) => void }) {
-  const params = new URLSearchParams(window.location.search);
-  const [room, setRoom] = useState(params.get('room') || 'main');
-  const [user, setUser] = useState(params.get('user') || `u${Math.floor(Math.random() * 1000)}`);
-  const [name, setName] = useState(params.get('name') || '');
-  const [buyIn, setBuyIn] = useState(Number(params.get('buyin') || 2000));
+  const initial = useMemo(() => resolveInitialLogin(), []);
+  const [room, setRoom] = useState(initial.room);
+  const [user, setUser] = useState(initial.user);
+  const [name, setName] = useState(initial.name);
+  const [buyIn, setBuyIn] = useState(initial.buyIn);
 
   return (
     <div className="login-page">
@@ -64,12 +152,34 @@ function LoginView({ onSubmit }: { onSubmit: (s: LoginState) => void }) {
           <input type="number" min={100} value={buyIn} onChange={(e) => setBuyIn(Number(e.target.value || 100))} />
         </label>
         <button type="submit">Enter Table</button>
+        <button
+          className="secondary"
+          type="button"
+          onClick={() => {
+            clearPersistedLogin();
+            const reset = defaultLoginState();
+            setRoom(reset.room);
+            setUser(reset.user);
+            setName(reset.name);
+            setBuyIn(reset.buyIn);
+          }}
+        >
+          Clear Saved Identity
+        </button>
       </form>
     </div>
   );
 }
 
-function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void }) {
+function TableView({
+  login,
+  onLeave,
+  onResetIdentity
+}: {
+  login: LoginState;
+  onLeave: () => void;
+  onResetIdentity: () => void;
+}) {
   const [amountInput, setAmountInput] = useState('40');
   const [startMode, setStartMode] = useState<'classic' | 'short'>('classic');
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
@@ -210,6 +320,7 @@ function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void 
         <div className="meta">
           <span>room: {login.room}</span>
           <span>user: {login.name}</span>
+          <span>uid: {login.user}</span>
           <span>host: {hostName}</span>
           <span>conn: {state}</span>
           <span>mode: {snapshot?.deck_mode ?? 'classic'}</span>
@@ -352,6 +463,9 @@ function TableView({ login, onLeave }: { login: LoginState; onLeave: () => void 
             }}
           >
             Exit Room
+          </button>
+          <button className="secondary" onClick={onResetIdentity}>
+            Switch Identity
           </button>
         </aside>
       </main>
