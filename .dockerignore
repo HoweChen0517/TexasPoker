@@ -3,6 +3,8 @@
 .cache
 **/node_modules
 **/dist
+**/coverage
+**/.vite
 **/*.log
 **/tsconfig.tsbuildinfo
 **/.DS_Store

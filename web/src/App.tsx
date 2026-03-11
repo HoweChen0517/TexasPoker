@@ -170,7 +170,7 @@ function LoginView({ onSubmit }: { onSubmit: (s: LoginState) => void }) {
           Buy-in Chips
           <input type="number" min={100} value={buyIn} onChange={(e) => setBuyIn(Number(e.target.value || 100))} />
         </label>
-        <button type="submit">Enter Table</button>
+        <button className="primary" type="submit">Enter Table</button>
         <button
           className="secondary"
           type="button"
@@ -435,7 +435,7 @@ function TableView({
                     <option value="short">Short (remove 2-5, Flush &gt; Full House)</option>
                   </select>
                 </label>
-                <button onClick={() => send('start_hand', { mode: startMode })}>Start Hand</button>
+                <button className="primary" onClick={() => send('start_hand', { mode: startMode })}>Start Hand</button>
                 <button onClick={() => send('restart_hand')}>Restart</button>
                 <button onClick={() => send('dissolve_room')}>Dissolve Room</button>
               </>
@@ -444,7 +444,7 @@ function TableView({
             )}
 
             {me?.is_spectator ? (
-              <button onClick={() => send('join_table', { seat: selectedSeat ?? -1 })}>Join Next Hand</button>
+              <button className="primary" onClick={() => send('join_table', { seat: selectedSeat ?? -1 })}>Join Next Hand</button>
             ) : (
               <button disabled={selectedSeat === null} onClick={() => send('set_seat', { seat: selectedSeat ?? -1 })}>
                 Change Seat
@@ -499,7 +499,7 @@ function TableView({
               <button disabled={actionState.check} onClick={() => send('action', { action: 'check' })}>
                 Check
               </button>
-              <button disabled={actionState.call} onClick={() => send('action', { action: 'call' })}>
+              <button className="primary" disabled={actionState.call} onClick={() => send('action', { action: 'call' })}>
                 Call
               </button>
               <button disabled={actionState.allIn} onClick={() => send('action', { action: 'all_in' })}>
@@ -519,10 +519,10 @@ function TableView({
             </label>
 
             <div className="actions-inline">
-              <button disabled={actionState.bet || !hasValidAmount} onClick={() => send('action', { action: 'bet', amount })}>
+              <button className="primary" disabled={actionState.bet || !hasValidAmount} onClick={() => send('action', { action: 'bet', amount })}>
                 Bet
               </button>
-              <button disabled={actionState.raise || !hasValidAmount} onClick={() => send('action', { action: 'raise', amount })}>
+              <button className="primary" disabled={actionState.raise || !hasValidAmount} onClick={() => send('action', { action: 'raise', amount })}>
                 Raise
               </button>
             </div>

@@ -5,6 +5,7 @@ WORKDIR /src
 
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
+ARG VERSION=dev
 
 COPY server/go.mod ./
 RUN --mount=type=cache,target=/go/pkg/mod \
@@ -18,6 +19,11 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 FROM gcr.io/distroless/base-debian12
 WORKDIR /app
+
+ARG VERSION=dev
+LABEL org.opencontainers.image.title="texaspoker-server"
+LABEL org.opencontainers.image.version=$VERSION
+LABEL org.opencontainers.image.source="https://github.com/howechen/TexasPoker"
 
 COPY --from=build /out/pokerd /app/pokerd
 
