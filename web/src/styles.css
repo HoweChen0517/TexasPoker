@@ -44,6 +44,7 @@ body {
 .page {
   min-height: 100vh;
   padding: 16px;
+  padding-bottom: 16px;
 }
 
 .topbar {
@@ -81,6 +82,33 @@ body {
   background: radial-gradient(circle at 30% 20%, #ffffff, #ebebe3);
   box-shadow: 0 8px 0 #151515;
   position: relative;
+}
+
+.turn-banner {
+  margin-bottom: 12px;
+  border: 3px solid var(--ink);
+  border-radius: 16px;
+  background: linear-gradient(135deg, #fefefe 0%, #ecece4 100%);
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.turn-banner.self {
+  background: linear-gradient(135deg, #151515 0%, #2a2a2a 100%);
+  color: #fff;
+  box-shadow: 0 0 0 4px rgba(17, 17, 17, 0.14);
+}
+
+.turn-banner-label {
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .table-hud {
@@ -184,15 +212,17 @@ body {
   padding: 8px;
   background: var(--paper);
   min-height: 120px;
-  transition: transform 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
   text-align: left;
   font-family: inherit;
   color: inherit;
 }
 
 .seat.active {
-  transform: translateY(-2px) rotate(-1deg);
+  transform: translateY(-4px) rotate(-1deg);
   border-style: solid;
+  background: #fff;
+  box-shadow: 0 0 0 4px #111, 0 14px 24px rgba(0, 0, 0, 0.18);
 }
 
 .seat.selected {
@@ -228,6 +258,11 @@ body {
   border-radius: 999px;
   padding: 1px 6px;
   font-size: 10px;
+}
+
+.turn-tag {
+  background: #111;
+  color: #fff;
 }
 
 .fold-tag {
@@ -292,10 +327,66 @@ body {
   background: #fff;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   align-self: start;
   position: sticky;
   top: 10px;
+}
+
+.control-panel,
+.action-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.action-dock {
+  border: 2px solid var(--ink);
+  border-radius: 16px;
+  padding: 10px;
+  background: linear-gradient(180deg, #fdfdf8 0%, #efefe8 100%);
+}
+
+.action-dock.self-turn {
+  box-shadow: 0 0 0 4px rgba(17, 17, 17, 0.14);
+}
+
+.action-status {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.action-status-phase {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.me-strip {
+  border: 2px dashed var(--ink);
+  border-radius: 12px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.me-strip-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.me-cards {
+  flex-wrap: wrap;
+}
+
+.primary-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .host-only {
@@ -366,7 +457,6 @@ select {
 
   .controls {
     position: static;
-    order: -1;
   }
 
   .seats-grid {
@@ -377,14 +467,64 @@ select {
 @media (max-width: 560px) {
   .page {
     padding: 10px;
+    padding-bottom: 310px;
   }
 
   .table {
     padding: 10px;
   }
 
+  .turn-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
   .seats-grid {
     grid-template-columns: 1fr;
+  }
+
+  .controls {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    gap: 10px;
+  }
+
+  .control-panel {
+    border: 2px solid var(--ink);
+    border-radius: 18px;
+    padding: 12px;
+    background: #fff;
+  }
+
+  .action-dock {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    z-index: 50;
+    border-width: 3px;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
+  }
+
+  .primary-actions,
+  .actions-inline {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .actions-inline {
+    gap: 6px;
+  }
+
+  .primary-actions {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .primary-actions button,
+  .actions-inline button {
+    padding-left: 4px;
+    padding-right: 4px;
+    font-size: 12px;
   }
 
   .card {

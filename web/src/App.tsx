@@ -97,6 +97,25 @@ function seatOrder(players: PlayerView[]) {
   return slots;
 }
 
+function phaseLabel(phase?: string) {
+  switch (phase) {
+    case 'preflop':
+      return 'Preflop';
+    case 'flop':
+      return 'Flop';
+    case 'turn':
+      return 'Turn';
+    case 'river':
+      return 'River';
+    case 'showdown':
+      return 'Showdown';
+    case 'complete':
+      return 'Settlement';
+    default:
+      return 'Waiting';
+  }
+}
+
 export default function App() {
   const [login, setLogin] = useState<LoginState | null>(null);
 
@@ -192,11 +211,25 @@ function TableView({
   const me = useMemo(() => (snapshot?.players ?? []).find((p) => p.user_id === login.user), [snapshot, login.user]);
   const spectators = useMemo(() => (snapshot?.players ?? []).filter((p) => p.is_spectator), [snapshot]);
   const selectedPlayer = useMemo(() => (selectedSeat === null ? null : seats[selectedSeat] ?? null), [selectedSeat, seats]);
+  const actingPlayer = useMemo(
+    () => (snapshot?.players ?? []).find((p) => p.seat === snapshot?.acting_seat) || null,
+    [snapshot]
+  );
   const hostName = useMemo(
     () => (snapshot?.players ?? []).find((p) => p.user_id === snapshot?.host_user_id)?.name || snapshot?.host_user_id || '-',
     [snapshot]
   );
   const isHost = me?.is_host ?? false;
+  const isYourTurn = Boolean(
+    snapshot &&
+      me &&
+      !me.is_spectator &&
+      !me.has_folded &&
+      !me.is_all_in &&
+      me.seat === snapshot.acting_seat &&
+      snapshot.phase !== 'complete' &&
+      snapshot.phase !== 'waiting'
+  );
   const amount = Number.parseInt(amountInput, 10);
   const hasValidAmount = Number.isFinite(amount) && amount > 0;
   const actionState = useMemo(() => {
@@ -209,13 +242,6 @@ function TableView({
       raise: false
     };
     if (!snapshot || !me) return disabledAll;
-    const isYourTurn =
-      !me.is_spectator &&
-      !me.has_folded &&
-      !me.is_all_in &&
-      me.seat === snapshot.acting_seat &&
-      snapshot.phase !== 'complete' &&
-      snapshot.phase !== 'waiting';
     if (!isYourTurn) {
       return { fold: true, check: true, call: true, allIn: true, bet: true, raise: true };
     }
@@ -237,7 +263,7 @@ function TableView({
       bet: !canBet,
       raise: !canRaise
     };
-  }, [snapshot, me, amount, hasValidAmount]);
+  }, [snapshot, me, amount, hasValidAmount, isYourTurn]);
   const canRemoveSelected = Boolean(
     isHost &&
       snapshot &&
@@ -329,6 +355,17 @@ function TableView({
 
       <main className="table-wrap">
         <section className="table">
+          <div className={`turn-banner ${isYourTurn ? 'self' : ''}`}>
+            <span className="turn-banner-label">{isYourTurn ? 'Act Now' : 'On Move'}</span>
+            <strong>
+              {snapshot?.phase === 'waiting' || !actingPlayer
+                ? `Waiting for next hand`
+                : isYourTurn
+                  ? `Your decision in ${phaseLabel(snapshot?.phase)}`
+                  : `${actingPlayer.name} is acting in ${phaseLabel(snapshot?.phase)}`}
+            </strong>
+          </div>
+
           <div className="table-hud">
             <div>phase: {snapshot?.phase ?? 'waiting'}</div>
             <div>current bet: {snapshot?.current_bet ?? 0}</div>
@@ -388,85 +425,108 @@ function TableView({
         </section>
 
         <aside className="controls">
-          {isHost ? (
-            <>
-              <label>
-                Start Mode
-                <select value={startMode} onChange={(e) => setStartMode(e.target.value as 'classic' | 'short')}>
-                  <option value="classic">Classic</option>
-                  <option value="short">Short (remove 2-5, Flush &gt; Full House)</option>
-                </select>
-              </label>
-              <button onClick={() => send('start_hand', { mode: startMode })}>Start Hand</button>
-              <button onClick={() => send('restart_hand')}>Restart</button>
-              <button onClick={() => send('dissolve_room')}>Dissolve Room</button>
-            </>
-          ) : (
-            <div className="host-only">Only HOST can set mode/start/restart.</div>
-          )}
+          <div className="control-panel">
+            {isHost ? (
+              <>
+                <label>
+                  Start Mode
+                  <select value={startMode} onChange={(e) => setStartMode(e.target.value as 'classic' | 'short')}>
+                    <option value="classic">Classic</option>
+                    <option value="short">Short (remove 2-5, Flush &gt; Full House)</option>
+                  </select>
+                </label>
+                <button onClick={() => send('start_hand', { mode: startMode })}>Start Hand</button>
+                <button onClick={() => send('restart_hand')}>Restart</button>
+                <button onClick={() => send('dissolve_room')}>Dissolve Room</button>
+              </>
+            ) : (
+              <div className="host-only">Only HOST can set mode/start/restart.</div>
+            )}
 
-          {me?.is_spectator ? (
-            <button onClick={() => send('join_table', { seat: selectedSeat ?? -1 })}>Join Next Hand</button>
-          ) : (
-            <button disabled={selectedSeat === null} onClick={() => send('set_seat', { seat: selectedSeat ?? -1 })}>
-              Change Seat
+            {me?.is_spectator ? (
+              <button onClick={() => send('join_table', { seat: selectedSeat ?? -1 })}>Join Next Hand</button>
+            ) : (
+              <button disabled={selectedSeat === null} onClick={() => send('set_seat', { seat: selectedSeat ?? -1 })}>
+                Change Seat
+              </button>
+            )}
+            <button
+              disabled={!canRemoveSelected}
+              onClick={() => selectedPlayer && send('remove_player', { user_id: selectedPlayer.user_id })}
+            >
+              {selectedPlayer ? `Remove ${selectedPlayer.name}` : 'Remove Player'}
             </button>
-          )}
-          <button
-            disabled={!canRemoveSelected}
-            onClick={() => selectedPlayer && send('remove_player', { user_id: selectedPlayer.user_id })}
-          >
-            {selectedPlayer ? `Remove ${selectedPlayer.name}` : 'Remove Player'}
-          </button>
-          <button disabled={!snapshot?.can_reveal} onClick={() => send('reveal_cards')}>
-            Reveal My Cards
-          </button>
-
-          <button disabled={actionState.fold} onClick={() => send('action', { action: 'fold' })}>
-            Fold
-          </button>
-          <button disabled={actionState.check} onClick={() => send('action', { action: 'check' })}>
-            Check
-          </button>
-          <button disabled={actionState.call} onClick={() => send('action', { action: 'call' })}>
-            Call
-          </button>
-          <button disabled={actionState.allIn} onClick={() => send('action', { action: 'all_in' })}>
-            All In
-          </button>
-
-          <label>
-            Raise/Bet
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder="Enter amount"
-              value={amountInput}
-              onChange={(e) => setAmountInput(e.target.value.replace(/[^\d]/g, ''))}
-            />
-          </label>
-
-          <div className="actions-inline">
-            <button disabled={actionState.bet || !hasValidAmount} onClick={() => send('action', { action: 'bet', amount })}>
-              Bet
+            <button disabled={!snapshot?.can_reveal} onClick={() => send('reveal_cards')}>
+              Reveal My Cards
             </button>
-            <button disabled={actionState.raise || !hasValidAmount} onClick={() => send('action', { action: 'raise', amount })}>
-              Raise
+
+            <p className="error">{error}</p>
+            <button
+              onClick={async () => {
+                await send('leave_room');
+                onLeave();
+              }}
+            >
+              Exit Room
+            </button>
+            <button className="secondary" onClick={onResetIdentity}>
+              Switch Identity
             </button>
           </div>
 
-          <p className="error">{error}</p>
-          <button
-            onClick={async () => {
-              await send('leave_room');
-              onLeave();
-            }}
-          >
-            Exit Room
-          </button>
-          <button className="secondary" onClick={onResetIdentity}>
-            Switch Identity
-          </button>
+          <div className={`action-dock ${isYourTurn ? 'self-turn' : ''}`}>
+            <div className="action-status">
+              <span className="action-status-phase">{phaseLabel(snapshot?.phase)}</span>
+              <strong>{isYourTurn ? 'Your turn to act' : actingPlayer ? `${actingPlayer.name} is deciding` : 'Waiting for action'}</strong>
+            </div>
+
+            <div className="me-strip">
+              <div className="me-strip-head">
+                <span>{login.name}</span>
+                <span>{me ? `${me.chips} chips` : '--'}</span>
+              </div>
+              <div className="cards-inline me-cards">
+                {(snapshot?.your_cards ?? []).length
+                  ? (snapshot?.your_cards ?? []).map((card, i) => <CardFace key={`${card.suit}${card.rank}-me-${i}`} card={card} />)
+                  : [0, 1].map((i) => <CardFace key={`me-empty-${i}`} hidden />)}
+              </div>
+            </div>
+
+            <div className="primary-actions">
+              <button disabled={actionState.fold} onClick={() => send('action', { action: 'fold' })}>
+                Fold
+              </button>
+              <button disabled={actionState.check} onClick={() => send('action', { action: 'check' })}>
+                Check
+              </button>
+              <button disabled={actionState.call} onClick={() => send('action', { action: 'call' })}>
+                Call
+              </button>
+              <button disabled={actionState.allIn} onClick={() => send('action', { action: 'all_in' })}>
+                All In
+              </button>
+            </div>
+
+            <label>
+              Raise/Bet
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="Enter amount"
+                value={amountInput}
+                onChange={(e) => setAmountInput(e.target.value.replace(/[^\d]/g, ''))}
+              />
+            </label>
+
+            <div className="actions-inline">
+              <button disabled={actionState.bet || !hasValidAmount} onClick={() => send('action', { action: 'bet', amount })}>
+                Bet
+              </button>
+              <button disabled={actionState.raise || !hasValidAmount} onClick={() => send('action', { action: 'raise', amount })}>
+                Raise
+              </button>
+            </div>
+          </div>
         </aside>
       </main>
     </div>

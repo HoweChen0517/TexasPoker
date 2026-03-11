@@ -27,6 +27,7 @@ export function Seat({ player, isYou, myCards, activeSeat, seatIndex, selectedSe
     >
       <div className="seat-head">
         <span className="name">{player.name}</span>
+        {activeSeat === player.seat && <span className="tag turn-tag">{isYou ? 'YOUR TURN' : 'TURN'}</span>}
         {isYou && <span className="tag">YOU</span>}
         {player.is_host && <span className="tag">HOST</span>}
         {player.is_dealer && <span className="tag">D</span>}
