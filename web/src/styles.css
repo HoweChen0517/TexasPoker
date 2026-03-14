@@ -52,7 +52,6 @@ body {
   min-height: 100vh;
   padding: 16px;
   padding-bottom: 16px;
-  overflow: hidden;
 }
 
 .topbar {
@@ -189,7 +188,7 @@ body {
 .board {
   display: flex;
   gap: 10px;
-  min-height: 98px;
+  min-height: 112px;
   flex-wrap: nowrap;
 }
 
@@ -203,6 +202,7 @@ body {
 
 .pot-inline {
   min-width: 108px;
+  min-height: 112px;
   border: 3px solid var(--ink);
   border-radius: 14px;
   background: var(--panel);
@@ -221,10 +221,12 @@ body {
 
 .table-sticky {
   position: sticky;
-  top: 0;
+  top: 8px;
   z-index: 5;
   background: radial-gradient(circle at 30% 20%, #ffffff, #ebebe3);
-  padding-bottom: 8px;
+  padding: 8px;
+  margin: -8px -8px 8px;
+  border-radius: 20px;
 }
 
 .player-pool {
@@ -308,8 +310,8 @@ body {
 }
 
 .card {
-  width: 44px;
-  height: 64px;
+  width: 52px;
+  height: 76px;
   border: 2px solid var(--ink);
   border-radius: 8px;
   background: #fff;
@@ -506,7 +508,6 @@ select {
 @media (max-width: 900px) {
   .table-wrap {
     grid-template-columns: 1fr;
-    min-height: calc(100vh - 88px);
   }
 
   .controls {
@@ -521,14 +522,10 @@ select {
 @media (max-width: 560px) {
   .page {
     padding: 10px;
-    overflow: hidden;
   }
 
   .table {
     padding: 10px;
-    display: flex;
-    flex-direction: column;
-    min-height: calc(100vh - 112px);
   }
 
   .turn-banner {
@@ -549,17 +546,21 @@ select {
   .board {
     gap: 6px;
     min-width: 0;
+    min-height: 96px;
   }
 
   .pot-inline {
     min-width: 84px;
+    min-height: 96px;
     padding: 8px 6px;
   }
 
   .table-sticky {
     position: sticky;
-    top: 0;
+    top: 8px;
     z-index: 20;
+    box-shadow: 0 14px 28px rgba(0, 0, 0, 0.14);
+    backdrop-filter: blur(8px);
   }
 
   .seats-grid {
@@ -609,8 +610,6 @@ select {
   }
 
   .player-pool {
-    flex: 1;
-    overflow-y: auto;
     padding-top: 8px;
     margin-top: 2px;
   }
@@ -620,7 +619,7 @@ select {
   }
 
   .card {
-    width: 38px;
-    height: 56px;
+    width: 46px;
+    height: 68px;
   }
 }

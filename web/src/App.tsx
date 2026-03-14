@@ -233,7 +233,6 @@ function TableView({
   const amount = Number.parseInt(amountInput, 10);
   const hasValidAmount = Number.isFinite(amount) && amount > 0;
   const callCost = Math.max(0, (snapshot?.current_bet ?? 0) - (me?.current_bet ?? 0));
-  const confirmAction = (snapshot?.current_bet ?? 0) > 0 ? 'raise' : 'bet';
   const actionState = useMemo(() => {
     const disabledAll = {
       fold: false,
@@ -340,6 +339,30 @@ function TableView({
     setSelectedSeat(seat);
   };
 
+  const confirmState = useMemo(() => {
+    if (!snapshot || !me || !isYourTurn || !hasValidAmount) {
+      return { disabled: true, action: 'bet' as 'bet' | 'call' | 'raise' };
+    }
+
+    if (snapshot.current_bet === 0) {
+      const canBet = amount >= snapshot.blind_big && amount <= me.chips;
+      return { disabled: !canBet, action: 'bet' as const };
+    }
+
+    if (amount < snapshot.current_bet) {
+      return { disabled: true, action: 'raise' as const };
+    }
+
+    if (amount === snapshot.current_bet) {
+      return { disabled: actionState.call, action: 'call' as const };
+    }
+
+    const raiseBy = amount - snapshot.current_bet
+    const chipsNeeded = amount - me.current_bet
+    const canRaise = chipsNeeded > 0 && chipsNeeded <= me.chips && raiseBy >= snapshot.min_raise
+    return { disabled: !canRaise, action: 'raise' as const }
+  }, [snapshot, me, isYourTurn, hasValidAmount, amount, actionState.call]);
+
   const fillAmountByPot = (ratio: number) => {
     const pot = snapshot?.pot ?? 0;
     if (pot <= 0) return;
@@ -348,14 +371,16 @@ function TableView({
   };
 
   const submitWager = async () => {
-    if (!snapshot || !hasValidAmount) return;
-    if (confirmAction === 'bet') {
-      if (actionState.bet) return;
+    if (!snapshot || !hasValidAmount || confirmState.disabled) return;
+    if (confirmState.action === 'bet') {
       await send('action', { action: 'bet', amount });
       return;
     }
-    if (actionState.raise) return;
-    await send('action', { action: 'raise', amount });
+    if (confirmState.action === 'call') {
+      await send('action', { action: 'call' });
+      return;
+    }
+    await send('action', { action: 'raise', amount: amount - snapshot.current_bet });
   };
 
   return (
@@ -454,9 +479,9 @@ function TableView({
                   1/2 Pot
                 </button>
                 <button className="secondary quick-chip" type="button" onClick={() => fillAmountByPot(1)}>
-                  Pot
+                  1 Pot
                 </button>
-                <button className="primary confirm-chip" disabled={!hasValidAmount || (confirmAction === 'bet' ? actionState.bet : actionState.raise)} onClick={submitWager}>
+                <button className="primary confirm-chip" disabled={confirmState.disabled} onClick={submitWager}>
                   Confirm
                 </button>
               </div>
