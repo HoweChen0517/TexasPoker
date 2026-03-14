@@ -20,9 +20,11 @@ ARG VERSION=dev
 LABEL org.opencontainers.image.title="texaspoker-web"
 LABEL org.opencontainers.image.version=$VERSION
 LABEL org.opencontainers.image.source="https://github.com/howechen/TexasPoker"
+LABEL org.opencontainers.image.description="TexasPoker React web client"
 
 COPY web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80
+ENV NGINX_ENTRYPOINT_QUIET_LOGS=1
 ENTRYPOINT ["nginx", "-g", "daemon off;"]

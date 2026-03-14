@@ -24,11 +24,13 @@ ARG VERSION=dev
 LABEL org.opencontainers.image.title="texaspoker-server"
 LABEL org.opencontainers.image.version=$VERSION
 LABEL org.opencontainers.image.source="https://github.com/howechen/TexasPoker"
+LABEL org.opencontainers.image.description="TexasPoker Go realtime game server"
 
 COPY --from=build /out/pokerd /app/pokerd
 
 USER nonroot:nonroot
 EXPOSE 8080
 ENV POKER_ADDR=:8080
+ENV GOMAXPROCS=2
 
 ENTRYPOINT ["/app/pokerd"]

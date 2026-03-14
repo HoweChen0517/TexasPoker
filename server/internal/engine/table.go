@@ -824,6 +824,9 @@ func (t *Table) blindSeats(activeCount int) (int, int) {
 
 func (t *Table) firstToActPreflop(activeCount int) int {
 	if t.shortDeck {
+		if activeCount == 2 {
+			return t.smallBlindAt
+		}
 		return t.firstToActFromSmallBlind()
 	}
 	if activeCount == 2 {
@@ -834,6 +837,13 @@ func (t *Table) firstToActPreflop(activeCount int) int {
 
 func (t *Table) firstToActPostflop() int {
 	if t.shortDeck {
+		if t.countActivePlayers() == 2 {
+			bb := t.playerBySeat(t.bigBlindAt)
+			if t.isEligibleToAct(bb) {
+				return t.bigBlindAt
+			}
+			return t.nextSeatFrom(t.bigBlindAt, t.isEligibleToAct)
+		}
 		return t.firstToActFromSmallBlind()
 	}
 	return t.nextSeatFrom(t.dealerSeat, t.isEligibleToAct)
@@ -845,6 +855,16 @@ func (t *Table) firstToActFromSmallBlind() int {
 		return t.smallBlindAt
 	}
 	return t.nextSeatFrom(t.smallBlindAt, t.isEligibleToAct)
+}
+
+func (t *Table) countActivePlayers() int {
+	count := 0
+	for _, p := range t.Players {
+		if p.Connected && !p.IsSpectator && p.Seat >= 0 && p.Chips >= 0 && len(p.Cards) > 0 && !p.Folded {
+			count++
+		}
+	}
+	return count
 }
 
 func (t *Table) RestartHand() error {

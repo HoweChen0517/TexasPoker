@@ -52,6 +52,7 @@ body {
   min-height: 100vh;
   padding: 16px;
   padding-bottom: 16px;
+  overflow: hidden;
 }
 
 .topbar {
@@ -89,6 +90,7 @@ body {
   background: radial-gradient(circle at 30% 20%, #ffffff, #ebebe3);
   box-shadow: 0 8px 0 #151515;
   position: relative;
+  min-height: 0;
 }
 
 .turn-banner {
@@ -125,25 +127,14 @@ body {
   font-size: 14px;
 }
 
-.pot-highlight {
-  margin: 10px 0 6px;
-  border: 3px solid var(--ink);
-  border-radius: 14px;
-  background: var(--panel);
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 12px;
-  padding: 8px 10px;
-}
-
 .pot-label {
-  font-size: 14px;
+  font-size: 13px;
   letter-spacing: 1px;
+  text-transform: uppercase;
 }
 
 .pot-value {
-  font-size: clamp(26px, 5vw, 44px);
+  font-size: clamp(20px, 3.6vw, 34px);
   font-weight: 700;
 }
 
@@ -196,15 +187,48 @@ body {
 }
 
 .board {
-  margin: 12px 0;
   display: flex;
   gap: 10px;
   min-height: 98px;
+  flex-wrap: nowrap;
+}
+
+.board-pot-row {
+  margin: 10px 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pot-inline {
+  min-width: 108px;
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 12px;
 }
 
 .table-surface {
   position: relative;
   padding-bottom: 28px;
+}
+
+.table-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: radial-gradient(circle at 30% 20%, #ffffff, #ebebe3);
+  padding-bottom: 8px;
+}
+
+.player-pool {
+  min-height: 0;
 }
 
 .seats-grid {
@@ -358,17 +382,11 @@ body {
   box-shadow: 0 0 0 4px rgba(17, 17, 17, 0.14);
 }
 
-.action-status {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.action-status-phase {
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
+.hero-action-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
 }
 
 .me-strip {
@@ -387,13 +405,33 @@ body {
 }
 
 .me-cards {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .primary-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.bet-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) repeat(3, auto);
+  gap: 6px;
+  align-items: center;
+}
+
+.amount-input {
+  min-width: 0;
+}
+
+.quick-chip {
+  white-space: nowrap;
+}
+
+.confirm-chip {
+  min-width: 88px;
 }
 
 .host-only {
@@ -456,12 +494,7 @@ select {
   padding: 7px;
   background: var(--panel);
   color: var(--ink);
-}
-
-.actions-inline {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  font-size: 16px;
 }
 
 .error {
@@ -473,6 +506,7 @@ select {
 @media (max-width: 900px) {
   .table-wrap {
     grid-template-columns: 1fr;
+    min-height: calc(100vh - 88px);
   }
 
   .controls {
@@ -487,20 +521,49 @@ select {
 @media (max-width: 560px) {
   .page {
     padding: 10px;
-    padding-bottom: 310px;
+    overflow: hidden;
   }
 
   .table {
     padding: 10px;
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 112px);
   }
 
   .turn-banner {
     flex-direction: column;
     align-items: flex-start;
+    margin-bottom: 8px;
+  }
+
+  .table-hud {
+    display: none;
+  }
+
+  .board-pot-row {
+    margin: 8px 0;
+    align-items: stretch;
+  }
+
+  .board {
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .pot-inline {
+    min-width: 84px;
+    padding: 8px 6px;
+  }
+
+  .table-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 20;
   }
 
   .seats-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .controls {
@@ -518,33 +581,42 @@ select {
   }
 
   .action-dock {
-    position: fixed;
-    left: 8px;
-    right: 8px;
-    bottom: 8px;
-    z-index: 50;
     border-width: 3px;
-    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
+    box-shadow: none;
   }
 
-  .primary-actions,
-  .actions-inline {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .hero-action-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
-  .actions-inline {
-    gap: 6px;
+  .me-strip {
+    padding: 6px;
   }
 
-  .primary-actions {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  .me-strip-head {
+    font-size: 12px;
   }
 
   .primary-actions button,
-  .actions-inline button {
+  .bet-row button {
     padding-left: 4px;
     padding-right: 4px;
     font-size: 12px;
+  }
+
+  .bet-row {
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+  }
+
+  .player-pool {
+    flex: 1;
+    overflow-y: auto;
+    padding-top: 8px;
+    margin-top: 2px;
+  }
+
+  .phase-corner {
+    display: none;
   }
 
   .card {

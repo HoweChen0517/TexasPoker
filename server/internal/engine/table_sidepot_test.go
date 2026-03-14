@@ -312,3 +312,29 @@ func TestShortDeckFlopStartsFromSmallBlind(t *testing.T) {
 		t.Fatalf("short deck flop should start from small blind, got %d", tb.actingSeat)
 	}
 }
+
+func TestShortDeckHeadsUpFlopStartsFromBigBlind(t *testing.T) {
+	tb := NewTable("r10")
+	tb.SetDeckMode("short")
+	tb.Players["SB"] = &Player{UserID: "SB", Name: "SB", Seat: 0, Chips: 200, Connected: true}
+	tb.Players["BB"] = &Player{UserID: "BB", Name: "BB", Seat: 1, Chips: 200, Connected: true}
+
+	if err := tb.StartHand(); err != nil {
+		t.Fatalf("start hand should succeed: %v", err)
+	}
+	if tb.actingSeat != 0 {
+		t.Fatalf("short deck heads-up preflop should start from small blind, got %d", tb.actingSeat)
+	}
+	if err := tb.ApplyAction("SB", model.ActionInput{Type: model.ActionCall}); err != nil {
+		t.Fatalf("small blind call should succeed: %v", err)
+	}
+	if err := tb.ApplyAction("BB", model.ActionInput{Type: model.ActionCheck}); err != nil {
+		t.Fatalf("big blind check should succeed: %v", err)
+	}
+	if tb.phase != model.PhaseFlop {
+		t.Fatalf("phase should advance to flop, got %s", tb.phase)
+	}
+	if tb.actingSeat != 1 {
+		t.Fatalf("short deck heads-up flop should start from big blind, got %d", tb.actingSeat)
+	}
+}

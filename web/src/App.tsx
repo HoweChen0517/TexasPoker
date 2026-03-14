@@ -232,6 +232,8 @@ function TableView({
   );
   const amount = Number.parseInt(amountInput, 10);
   const hasValidAmount = Number.isFinite(amount) && amount > 0;
+  const callCost = Math.max(0, (snapshot?.current_bet ?? 0) - (me?.current_bet ?? 0));
+  const confirmAction = (snapshot?.current_bet ?? 0) > 0 ? 'raise' : 'bet';
   const actionState = useMemo(() => {
     const disabledAll = {
       fold: false,
@@ -246,7 +248,6 @@ function TableView({
       return { fold: true, check: true, call: true, allIn: true, bet: true, raise: true };
     }
 
-    const callCost = Math.max(0, snapshot.current_bet - me.current_bet);
     const canAllIn = me.chips > 0;
     const canFold = callCost > 0;
     const canCall = callCost > 0 && me.chips >= callCost;
@@ -339,6 +340,24 @@ function TableView({
     setSelectedSeat(seat);
   };
 
+  const fillAmountByPot = (ratio: number) => {
+    const pot = snapshot?.pot ?? 0;
+    if (pot <= 0) return;
+    const computed = Math.max(1, Math.floor(pot * ratio));
+    setAmountInput(String(computed));
+  };
+
+  const submitWager = async () => {
+    if (!snapshot || !hasValidAmount) return;
+    if (confirmAction === 'bet') {
+      if (actionState.bet) return;
+      await send('action', { action: 'bet', amount });
+      return;
+    }
+    if (actionState.raise) return;
+    await send('action', { action: 'raise', amount });
+  };
+
   return (
     <div className="page">
       <header className="topbar">
@@ -355,58 +374,116 @@ function TableView({
 
       <main className="table-wrap">
         <section className="table">
-          <div className={`turn-banner ${isYourTurn ? 'self' : ''}`}>
-            <span className="turn-banner-label">{isYourTurn ? 'Act Now' : 'On Move'}</span>
-            <strong>
-              {snapshot?.phase === 'waiting' || !actingPlayer
-                ? `Waiting for next hand`
-                : isYourTurn
-                  ? `Your decision in ${phaseLabel(snapshot?.phase)}`
-                  : `${actingPlayer.name} is acting in ${phaseLabel(snapshot?.phase)}`}
-            </strong>
-          </div>
-
-          <div className="table-hud">
-            <div>phase: {snapshot?.phase ?? 'waiting'}</div>
-            <div>current bet: {snapshot?.current_bet ?? 0}</div>
-            <div>
-              blinds: {snapshot?.blind_small ?? 10}/{snapshot?.blind_big ?? 20}
-            </div>
-          </div>
-
-          <div className="pot-highlight">
-            <span className="pot-label">POT</span>
-            <span className="pot-value">{snapshot?.pot ?? 0}</span>
-          </div>
           {phasePop ? <div className="phase-pop">{phasePop}</div> : null}
 
-          <div className="table-surface">
-            <div className="board">
-              {(snapshot?.board ?? []).map((card, i) => (
-                <CardFace key={`${card.suit}${card.rank}-${i}`} card={card} />
-              ))}
-              {Array.from({ length: Math.max(0, 5 - (snapshot?.board?.length ?? 0)) }).map((_, i) => (
-                <CardFace key={`empty-${i}`} hidden />
-              ))}
+          <div className="table-sticky">
+            <div className={`turn-banner ${isYourTurn ? 'self' : ''}`}>
+              <span className="turn-banner-label">{isYourTurn ? 'Act Now' : 'On Move'}</span>
+              <strong>
+                {snapshot?.phase === 'waiting' || !actingPlayer
+                  ? `Waiting for next hand`
+                  : isYourTurn
+                    ? `Your decision in ${phaseLabel(snapshot?.phase)}`
+                    : `${actingPlayer.name} is acting in ${phaseLabel(snapshot?.phase)}`}
+              </strong>
             </div>
-            <div className="seats-grid">
-              {seats.map((p, idx) => (
-                <Seat
-                  key={`seat-${idx}`}
-                  player={p}
-                  isYou={p?.user_id === login.user}
-                  myCards={snapshot?.your_cards ?? []}
-                  activeSeat={snapshot?.acting_seat ?? -1}
-                  seatIndex={idx}
-                  selectedSeat={selectedSeat}
-                  onSelectSeat={clickSeat}
+
+            <div className="table-hud">
+              <div>phase: {snapshot?.phase ?? 'waiting'}</div>
+              <div>current bet: {snapshot?.current_bet ?? 0}</div>
+              <div>
+                blinds: {snapshot?.blind_small ?? 10}/{snapshot?.blind_big ?? 20}
+              </div>
+            </div>
+
+            <div className="board-pot-row">
+              <div className="board">
+                {(snapshot?.board ?? []).map((card, i) => (
+                  <CardFace key={`${card.suit}${card.rank}-${i}`} card={card} />
+                ))}
+                {Array.from({ length: Math.max(0, 5 - (snapshot?.board?.length ?? 0)) }).map((_, i) => (
+                  <CardFace key={`empty-${i}`} hidden />
+                ))}
+              </div>
+              <div className="pot-inline">
+                <span className="pot-label">Pot</span>
+                <span className="pot-value">{snapshot?.pot ?? 0}</span>
+              </div>
+            </div>
+
+            <div className={`action-dock ${isYourTurn ? 'self-turn' : ''}`}>
+              <div className="hero-action-row">
+                <div className="me-strip">
+                  <div className="me-strip-head">
+                    <span>{login.name}</span>
+                    <span>{me ? `${me.chips} chips` : '--'}</span>
+                  </div>
+                  <div className="cards-inline me-cards">
+                    {(snapshot?.your_cards ?? []).length
+                      ? (snapshot?.your_cards ?? []).map((card, i) => <CardFace key={`${card.suit}${card.rank}-me-${i}`} card={card} />)
+                      : [0, 1].map((i) => <CardFace key={`me-empty-${i}`} hidden />)}
+                  </div>
+                </div>
+
+                <div className="primary-actions">
+                  <button disabled={actionState.check} onClick={() => send('action', { action: 'check' })}>
+                    Check
+                  </button>
+                  <button className="primary" disabled={actionState.call} onClick={() => send('action', { action: 'call' })}>
+                    Call {callCost > 0 ? callCost : ''}
+                  </button>
+                  <button disabled={actionState.fold} onClick={() => send('action', { action: 'fold' })}>
+                    Fold
+                  </button>
+                  <button disabled={actionState.allIn} onClick={() => send('action', { action: 'all_in' })}>
+                    All In
+                  </button>
+                </div>
+              </div>
+
+              <div className="bet-row">
+                <input
+                  className="amount-input"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="amount"
+                  value={amountInput}
+                  onChange={(e) => setAmountInput(e.target.value.replace(/[^\d]/g, ''))}
                 />
-              ))}
+                <button className="secondary quick-chip" type="button" onClick={() => fillAmountByPot(0.5)}>
+                  1/2 Pot
+                </button>
+                <button className="secondary quick-chip" type="button" onClick={() => fillAmountByPot(1)}>
+                  Pot
+                </button>
+                <button className="primary confirm-chip" disabled={!hasValidAmount || (confirmAction === 'bet' ? actionState.bet : actionState.raise)} onClick={submitWager}>
+                  Confirm
+                </button>
+              </div>
             </div>
-            <div className="phase-corner">{snapshot?.phase ?? 'waiting'}</div>
           </div>
 
           <div className="message">{snapshot?.round_message ?? 'Waiting for players...'}</div>
+
+          <div className="player-pool">
+            <div className="table-surface">
+              <div className="seats-grid">
+                {seats.map((p, idx) => (
+                  <Seat
+                    key={`seat-${idx}`}
+                    player={p}
+                    isYou={p?.user_id === login.user}
+                    myCards={snapshot?.your_cards ?? []}
+                    activeSeat={snapshot?.acting_seat ?? -1}
+                    seatIndex={idx}
+                    selectedSeat={selectedSeat}
+                    onSelectSeat={clickSeat}
+                  />
+                ))}
+              </div>
+              <div className="phase-corner">{snapshot?.phase ?? 'waiting'}</div>
+            </div>
+          </div>
 
           {snapshot?.winners && snapshot.winners.length > 0 && (
             <div className="winner-box">
@@ -456,9 +533,7 @@ function TableView({
             >
               {selectedPlayer ? `Remove ${selectedPlayer.name}` : 'Remove Player'}
             </button>
-            <button disabled={!snapshot?.can_reveal} onClick={() => send('reveal_cards')}>
-              Reveal My Cards
-            </button>
+            <button disabled={!snapshot?.can_reveal} onClick={() => send('reveal_cards')}>Reveal My Cards</button>
 
             <p className="error">{error}</p>
             <button
@@ -474,59 +549,6 @@ function TableView({
             </button>
           </div>
 
-          <div className={`action-dock ${isYourTurn ? 'self-turn' : ''}`}>
-            <div className="action-status">
-              <span className="action-status-phase">{phaseLabel(snapshot?.phase)}</span>
-              <strong>{isYourTurn ? 'Your turn to act' : actingPlayer ? `${actingPlayer.name} is deciding` : 'Waiting for action'}</strong>
-            </div>
-
-            <div className="me-strip">
-              <div className="me-strip-head">
-                <span>{login.name}</span>
-                <span>{me ? `${me.chips} chips` : '--'}</span>
-              </div>
-              <div className="cards-inline me-cards">
-                {(snapshot?.your_cards ?? []).length
-                  ? (snapshot?.your_cards ?? []).map((card, i) => <CardFace key={`${card.suit}${card.rank}-me-${i}`} card={card} />)
-                  : [0, 1].map((i) => <CardFace key={`me-empty-${i}`} hidden />)}
-              </div>
-            </div>
-
-            <div className="primary-actions">
-              <button disabled={actionState.fold} onClick={() => send('action', { action: 'fold' })}>
-                Fold
-              </button>
-              <button disabled={actionState.check} onClick={() => send('action', { action: 'check' })}>
-                Check
-              </button>
-              <button className="primary" disabled={actionState.call} onClick={() => send('action', { action: 'call' })}>
-                Call
-              </button>
-              <button disabled={actionState.allIn} onClick={() => send('action', { action: 'all_in' })}>
-                All In
-              </button>
-            </div>
-
-            <label>
-              Raise/Bet
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder="Enter amount"
-                value={amountInput}
-                onChange={(e) => setAmountInput(e.target.value.replace(/[^\d]/g, ''))}
-              />
-            </label>
-
-            <div className="actions-inline">
-              <button className="primary" disabled={actionState.bet || !hasValidAmount} onClick={() => send('action', { action: 'bet', amount })}>
-                Bet
-              </button>
-              <button className="primary" disabled={actionState.raise || !hasValidAmount} onClick={() => send('action', { action: 'raise', amount })}>
-                Raise
-              </button>
-            </div>
-          </div>
         </aside>
       </main>
     </div>
