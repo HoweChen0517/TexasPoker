@@ -1,11 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CardFace } from './components/CardFace';
 import { Seat } from './components/Seat';
-import { SpinDial } from './components/SpinDial';
-import { useAudioFeedback } from './hooks/useAudioFeedback';
-import { useHapticFeedback } from './hooks/useHapticFeedback';
 import { usePokerSocket } from './hooks/usePokerSocket';
-import type { PlayerView, Snapshot } from './types/poker';
+import type { PlayerView } from './types/poker';
 
 const apiBase = (import.meta.env.VITE_API_URL as string | undefined) || `http://${window.location.hostname}:8080`;
 
@@ -119,31 +116,6 @@ function phaseLabel(phase?: string) {
   }
 }
 
-function getMinBet(snapshot: Snapshot | null, me: PlayerView | undefined) {
-  if (!snapshot || !me) return 0;
-  const callCost = Math.max(0, snapshot.current_bet - (me.current_bet ?? 0));
-  if (callCost === 0) return Math.min(snapshot.blind_big, me.chips);
-  return Math.min(callCost, me.chips);
-}
-
-function clampBet(value: number, snapshot: Snapshot | null, me: PlayerView | undefined) {
-  if (!snapshot || !me) return Math.max(0, Math.floor(value));
-  const chips = Math.max(0, me.chips);
-  if (chips === 0) return 0;
-
-  const callCost = Math.max(0, snapshot.current_bet - (me.current_bet ?? 0));
-  let next = Math.min(chips, Math.max(0, Math.floor(value)));
-  if (callCost === 0) {
-    return Math.min(chips, Math.max(next, snapshot.blind_big));
-  }
-
-  if (next <= callCost) return Math.min(callCost, chips);
-  const minRaiseCommit = callCost + snapshot.min_raise;
-  if (chips < minRaiseCommit) return Math.min(callCost, chips);
-  if (next < minRaiseCommit) return minRaiseCommit;
-  return next;
-}
-
 export default function App() {
   const [login, setLogin] = useState<LoginState | null>(null);
 
@@ -227,15 +199,12 @@ function TableView({
   onLeave: () => void;
   onResetIdentity: () => void;
 }) {
-  const [betAmount, setBetAmount] = useState(40);
+  const [amountInput, setAmountInput] = useState('40');
   const [startMode, setStartMode] = useState<'classic' | 'short'>('classic');
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
   const [phasePop, setPhasePop] = useState('');
   const phaseRef = useRef<string>('');
-  const betHandRef = useRef<number | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const dialAudio = useAudioFeedback();
-  const haptics = useHapticFeedback();
   const { state, snapshot, error, send } = usePokerSocket(apiBase, login.room, login.user, login.name, login.buyIn);
 
   const seats = useMemo(() => seatOrder(snapshot?.players ?? []), [snapshot]);
@@ -261,11 +230,9 @@ function TableView({
       snapshot.phase !== 'complete' &&
       snapshot.phase !== 'waiting'
   );
-  const amount = betAmount;
+  const amount = Number.parseInt(amountInput, 10);
   const hasValidAmount = Number.isFinite(amount) && amount > 0;
   const callCost = Math.max(0, (snapshot?.current_bet ?? 0) - (me?.current_bet ?? 0));
-  const minBet = getMinBet(snapshot, me);
-  const maxBet = Math.max(0, me?.chips ?? 0);
   const actionState = useMemo(() => {
     const disabledAll = {
       fold: false,
@@ -284,9 +251,9 @@ function TableView({
     const canFold = callCost > 0;
     const canCall = callCost > 0 && me.chips >= callCost;
     const canCheck = callCost === 0;
-    const canBet = hasValidAmount && snapshot.current_bet === 0 && amount >= snapshot.blind_big && amount <= me.chips;
-    const raiseBy = amount - callCost;
-    const canRaise = hasValidAmount && snapshot.current_bet > 0 && amount <= me.chips && raiseBy >= snapshot.min_raise;
+    const canBet = hasValidAmount && snapshot.current_bet === 0 && me.chips >= Math.max(snapshot.blind_big, amount);
+    const needToRaiseBy = snapshot.current_bet > 0 ? callCost + amount : amount;
+    const canRaise = hasValidAmount && snapshot.current_bet > 0 && amount >= snapshot.min_raise && me.chips >= needToRaiseBy;
 
     return {
       fold: !canFold,
@@ -296,7 +263,7 @@ function TableView({
       bet: !canBet,
       raise: !canRaise
     };
-  }, [snapshot, me, amount, hasValidAmount, isYourTurn, callCost]);
+  }, [snapshot, me, amount, hasValidAmount, isYourTurn]);
   const canRemoveSelected = Boolean(
     isHost &&
       snapshot &&
@@ -368,17 +335,6 @@ function TableView({
     return () => window.clearTimeout(timeout);
   }, [snapshot?.phase]);
 
-  useEffect(() => {
-    if (!snapshot || !me) return;
-    setBetAmount((current) => {
-      if (betHandRef.current !== snapshot.hand_id) {
-        betHandRef.current = snapshot.hand_id;
-        return clampBet(minBet, snapshot, me);
-      }
-      return clampBet(current || minBet, snapshot, me);
-    });
-  }, [snapshot?.hand_id, snapshot?.phase, snapshot?.current_bet, snapshot?.min_raise, snapshot?.blind_big, me?.chips, me?.current_bet, minBet, snapshot, me]);
-
   const clickSeat = async (seat: number) => {
     setSelectedSeat(seat);
   };
@@ -393,24 +349,25 @@ function TableView({
       return { disabled: !canBet, action: 'bet' as const };
     }
 
-    if (amount < callCost) {
+    if (amount < snapshot.current_bet) {
       return { disabled: true, action: 'raise' as const };
     }
 
-    if (amount === callCost) {
+    if (amount === snapshot.current_bet) {
       return { disabled: actionState.call, action: 'call' as const };
     }
 
-    const raiseBy = amount - callCost
-    const canRaise = amount > callCost && amount <= me.chips && raiseBy >= snapshot.min_raise
+    const raiseBy = amount - snapshot.current_bet
+    const chipsNeeded = amount - me.current_bet
+    const canRaise = chipsNeeded > 0 && chipsNeeded <= me.chips && raiseBy >= snapshot.min_raise
     return { disabled: !canRaise, action: 'raise' as const }
-  }, [snapshot, me, isYourTurn, hasValidAmount, amount, callCost, actionState.call]);
+  }, [snapshot, me, isYourTurn, hasValidAmount, amount, actionState.call]);
 
   const fillAmountByPot = (ratio: number) => {
     const pot = snapshot?.pot ?? 0;
     if (pot <= 0) return;
     const computed = Math.max(1, Math.floor(pot * ratio));
-    setBetAmount(clampBet(computed, snapshot, me));
+    setAmountInput(String(computed));
   };
 
   const submitWager = async () => {
@@ -423,7 +380,7 @@ function TableView({
       await send('action', { action: 'call' });
       return;
     }
-    await send('action', { action: 'raise', amount: amount - callCost });
+    await send('action', { action: 'raise', amount: amount - snapshot.current_bet });
   };
 
   return (
@@ -510,24 +467,19 @@ function TableView({
               </div>
 
               <div className="bet-row">
-                <SpinDial
-                  value={betAmount}
-                  min={minBet}
-                  max={maxBet}
-                  disabled={!isYourTurn || maxBet <= 0}
-                  snapValue={(value) => clampBet(value, snapshot, me)}
-                  onChange={(value) => setBetAmount(value)}
-                  onTick={() => {
-                    dialAudio.playTick();
-                    haptics.tick();
-                  }}
-                  onSnap={() => dialAudio.playSnap()}
+                <input
+                  className="amount-input"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="amount"
+                  value={amountInput}
+                  onChange={(e) => setAmountInput(e.target.value.replace(/[^\d]/g, ''))}
                 />
                 <button className="secondary quick-chip" type="button" onClick={() => fillAmountByPot(0.5)}>
                   1/2 Pot
                 </button>
                 <button className="secondary quick-chip" type="button" onClick={() => fillAmountByPot(1)}>
-                  Pot
+                  1 Pot
                 </button>
                 <button className="primary confirm-chip" disabled={confirmState.disabled} onClick={submitWager}>
                   Confirm
