@@ -1,0 +1,27 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+      args:
+        VERSION: ${VERSION:-v1.2}
+    image: texaspoker-server:${VERSION:-v1.2}
+    environment:
+      POKER_ADDR: :8080
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        VERSION: ${VERSION:-v1.2}
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8080}
+    image: texaspoker-web:${VERSION:-v1.2}
+    ports:
+      - "5173:80"
+    depends_on:
+      - server
+    restart: unless-stopped

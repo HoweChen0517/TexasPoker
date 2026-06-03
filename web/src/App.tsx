@@ -232,6 +232,7 @@ function TableView({
   const [betAmount, setBetAmount] = useState(40);
   const [amountInput, setAmountInput] = useState('40');
   const [startMode, setStartMode] = useState<'classic' | 'short'>('classic');
+  const [blindEscalation, setBlindEscalation] = useState(false);
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
   const [phasePop, setPhasePop] = useState('');
   const phaseRef = useRef<string>('');
@@ -254,6 +255,9 @@ function TableView({
     [snapshot]
   );
   const isHost = me?.is_host ?? false;
+  const blindText = snapshot?.blind_escalation_active
+    ? `${snapshot.blind_small}/${snapshot.blind_big} (升盲中，距下次升盲 ${snapshot.hands_until_escalation} 手)`
+    : `${snapshot?.blind_small ?? 10}/${snapshot?.blind_big ?? 20}`;
   const isYourTurn = Boolean(
     snapshot &&
       me &&
@@ -391,6 +395,12 @@ function TableView({
     setAmountInput(String(nextAmount));
   }, [snapshot?.hand_id, snapshot?.phase, snapshot?.current_bet, snapshot?.min_raise, snapshot?.blind_big, me?.chips, me?.current_bet, minBet, snapshot, me]);
 
+  useEffect(() => {
+    if (snapshot?.blind_escalation_active) {
+      setBlindEscalation(true);
+    }
+  }, [snapshot?.blind_escalation_active]);
+
   const clickSeat = async (seat: number) => {
     setSelectedSeat(seat);
   };
@@ -449,6 +459,7 @@ function TableView({
           <span>host: {hostName}</span>
           <span>conn: {state}</span>
           <span>mode: {snapshot?.deck_mode ?? 'classic'}</span>
+          {snapshot?.blind_escalation_active ? <span>blinds: {blindText}</span> : null}
         </div>
       </header>
 
@@ -472,7 +483,7 @@ function TableView({
               <div>phase: {snapshot?.phase ?? 'waiting'}</div>
               <div>current bet: {snapshot?.current_bet ?? 0}</div>
               <div>
-                blinds: {snapshot?.blind_small ?? 10}/{snapshot?.blind_big ?? 20}
+                blinds: {blindText}
               </div>
             </div>
 
@@ -625,7 +636,15 @@ function TableView({
                     <option value="short">Short (remove 2-5, Flush &gt; Full House)</option>
                   </select>
                 </label>
-                <button className="primary" onClick={() => send('start_hand', { mode: startMode })}>Start Hand</button>
+                <label className="checkbox-line">
+                  <input
+                    type="checkbox"
+                    checked={blindEscalation}
+                    onChange={(e) => setBlindEscalation(e.target.checked)}
+                  />
+                  启用升盲（每 10 手翻倍）
+                </label>
+                <button className="primary" onClick={() => send('start_hand', { mode: startMode, blind_escalation: blindEscalation })}>Start Hand</button>
                 <button onClick={() => send('restart_hand')}>Restart</button>
                 <button onClick={() => send('dissolve_room')}>Dissolve Room</button>
               </>

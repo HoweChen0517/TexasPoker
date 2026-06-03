@@ -44,6 +44,8 @@ export type Snapshot = {
   min_raise: number;
   blind_small: number;
   blind_big: number;
+  blind_escalation_active: boolean;
+  hands_until_escalation: number;
   deck_mode: 'classic' | 'short';
   host_user_id: string;
   can_reveal: boolean;
