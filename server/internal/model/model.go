@@ -59,24 +59,26 @@ type PlayerView struct {
 }
 
 type Snapshot struct {
-	RoomID       string       `json:"room_id"`
-	HandID       int64        `json:"hand_id"`
-	Phase        Phase        `json:"phase"`
-	Pot          int64        `json:"pot"`
-	CurrentBet   int64        `json:"current_bet"`
-	MinRaise     int64        `json:"min_raise"`
-	BlindSmall   int64        `json:"blind_small"`
-	BlindBig     int64        `json:"blind_big"`
-	DeckMode     string       `json:"deck_mode"`
-	HostUserID   string       `json:"host_user_id"`
-	CanReveal    bool         `json:"can_reveal"`
-	DealerSeat   int          `json:"dealer_seat"`
-	ActingSeat   int          `json:"acting_seat"`
-	Board        []Card       `json:"board"`
-	Players      []PlayerView `json:"players"`
-	RoundMessage string       `json:"round_message"`
-	Winners      []WinnerView `json:"winners"`
-	YourCards    []Card       `json:"your_cards"`
+	RoomID                string       `json:"room_id"`
+	HandID                int64        `json:"hand_id"`
+	Phase                 Phase        `json:"phase"`
+	Pot                   int64        `json:"pot"`
+	CurrentBet            int64        `json:"current_bet"`
+	MinRaise              int64        `json:"min_raise"`
+	BlindSmall            int64        `json:"blind_small"`
+	BlindBig              int64        `json:"blind_big"`
+	BlindEscalationActive bool         `json:"blind_escalation_active"`
+	HandsUntilEscalation  int          `json:"hands_until_escalation"`
+	DeckMode              string       `json:"deck_mode"`
+	HostUserID            string       `json:"host_user_id"`
+	CanReveal             bool         `json:"can_reveal"`
+	DealerSeat            int          `json:"dealer_seat"`
+	ActingSeat            int          `json:"acting_seat"`
+	Board                 []Card       `json:"board"`
+	Players               []PlayerView `json:"players"`
+	RoundMessage          string       `json:"round_message"`
+	Winners               []WinnerView `json:"winners"`
+	YourCards             []Card       `json:"your_cards"`
 }
 
 type WinnerView struct {

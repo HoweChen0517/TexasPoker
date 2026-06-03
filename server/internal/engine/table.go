@@ -27,44 +27,75 @@ type Player struct {
 }
 
 type Table struct {
-	RoomID       string
-	SmallBlind   int64
-	BigBlind     int64
-	MaxSeats     int
-	Players      map[string]*Player
-	dealerSeat   int
-	actingSeat   int
-	phase        model.Phase
-	handID       int64
-	pot          int64
-	currentBet   int64
-	minRaise     int64
-	board        []model.Card
-	deck         []model.Card
-	winners      []model.WinnerView
-	roundMessage string
-	deckMode     string
-	shortDeck    bool
-	smallBlindAt int
-	bigBlindAt   int
-	canReveal    bool
+	RoomID               string
+	SmallBlind           int64
+	BigBlind             int64
+	BlindEscalation      bool
+	EscalationInterval   int
+	EscalationMultiplier float64
+	HandsSinceEscalation int
+	InitialSmallBlind    int64
+	InitialBigBlind      int64
+	MaxSeats             int
+	Players              map[string]*Player
+	dealerSeat           int
+	actingSeat           int
+	phase                model.Phase
+	handID               int64
+	pot                  int64
+	currentBet           int64
+	minRaise             int64
+	board                []model.Card
+	deck                 []model.Card
+	winners              []model.WinnerView
+	roundMessage         string
+	deckMode             string
+	shortDeck            bool
+	smallBlindAt         int
+	bigBlindAt           int
+	canReveal            bool
 }
 
 func NewTable(roomID string) *Table {
 	return &Table{
-		RoomID:       roomID,
-		SmallBlind:   10,
-		BigBlind:     20,
-		MaxSeats:     9,
-		Players:      map[string]*Player{},
-		dealerSeat:   -1,
-		actingSeat:   -1,
-		phase:        model.PhaseWaiting,
-		minRaise:     20,
-		deckMode:     "classic",
-		smallBlindAt: -1,
-		bigBlindAt:   -1,
-		canReveal:    false,
+		RoomID:               roomID,
+		SmallBlind:           10,
+		BigBlind:             20,
+		BlindEscalation:      false,
+		EscalationInterval:   10,
+		EscalationMultiplier: 2.0,
+		HandsSinceEscalation: 0,
+		InitialSmallBlind:    10,
+		InitialBigBlind:      20,
+		MaxSeats:             9,
+		Players:              map[string]*Player{},
+		dealerSeat:           -1,
+		actingSeat:           -1,
+		phase:                model.PhaseWaiting,
+		minRaise:             20,
+		deckMode:             "classic",
+		smallBlindAt:         -1,
+		bigBlindAt:           -1,
+		canReveal:            false,
+	}
+}
+
+func (t *Table) SetBlindEscalation(enable bool) {
+	if enable {
+		if !t.BlindEscalation {
+			t.InitialSmallBlind = t.SmallBlind
+			t.InitialBigBlind = t.BigBlind
+			t.HandsSinceEscalation = 0
+		}
+		t.BlindEscalation = true
+		return
+	}
+	t.BlindEscalation = false
+	t.HandsSinceEscalation = 0
+	if t.InitialSmallBlind > 0 && t.InitialBigBlind > 0 {
+		t.SmallBlind = t.InitialSmallBlind
+		t.BigBlind = t.InitialBigBlind
+		t.minRaise = t.BigBlind
 	}
 }
 
@@ -192,6 +223,7 @@ func (t *Table) StartHand() error {
 	if len(active) < 2 {
 		return errors.New("need at least 2 players with chips")
 	}
+	t.applyBlindEscalationIfDue()
 	sort.Slice(active, func(i, j int) bool { return active[i].Seat < active[j].Seat })
 	t.handID++
 	t.phase = model.PhasePreflop
@@ -398,22 +430,24 @@ func (t *Table) SnapshotFor(userID, hostUserID string) model.Snapshot {
 		})
 	}
 	s := model.Snapshot{
-		RoomID:       t.RoomID,
-		HandID:       t.handID,
-		Phase:        t.phase,
-		Pot:          t.pot,
-		CurrentBet:   t.currentBet,
-		MinRaise:     t.minRaise,
-		BlindSmall:   t.SmallBlind,
-		BlindBig:     t.BigBlind,
-		DeckMode:     t.deckMode,
-		HostUserID:   hostUserID,
-		DealerSeat:   t.dealerSeat,
-		ActingSeat:   t.actingSeat,
-		Board:        append([]model.Card(nil), t.board...),
-		Players:      players,
-		RoundMessage: t.roundMessage,
-		Winners:      append([]model.WinnerView(nil), t.winners...),
+		RoomID:                t.RoomID,
+		HandID:                t.handID,
+		Phase:                 t.phase,
+		Pot:                   t.pot,
+		CurrentBet:            t.currentBet,
+		MinRaise:              t.minRaise,
+		BlindSmall:            t.SmallBlind,
+		BlindBig:              t.BigBlind,
+		BlindEscalationActive: t.BlindEscalation,
+		HandsUntilEscalation:  t.handsUntilEscalation(),
+		DeckMode:              t.deckMode,
+		HostUserID:            hostUserID,
+		DealerSeat:            t.dealerSeat,
+		ActingSeat:            t.actingSeat,
+		Board:                 append([]model.Card(nil), t.board...),
+		Players:               players,
+		RoundMessage:          t.roundMessage,
+		Winners:               append([]model.WinnerView(nil), t.winners...),
 	}
 	if p, ok := t.Players[userID]; ok {
 		s.YourCards = append([]model.Card(nil), p.Cards...)
@@ -639,6 +673,7 @@ func (t *Table) resolveIfOnlyOneAlive() bool {
 	t.canReveal = true
 	t.pot = 0
 	t.actingSeat = -1
+	t.recordCompletedHand()
 	return true
 }
 
@@ -646,6 +681,7 @@ func (t *Table) resolveShowdown() {
 	alive := t.playersAlive()
 	if len(alive) == 0 {
 		t.phase = model.PhaseComplete
+		t.recordCompletedHand()
 		return
 	}
 
@@ -748,6 +784,7 @@ func (t *Table) resolveShowdown() {
 	t.canReveal = false
 	t.pot = 0
 	t.actingSeat = -1
+	t.recordCompletedHand()
 }
 
 func (t *Table) smallBlindSeat() int {
@@ -801,6 +838,37 @@ func (t *Table) isHandRunning() bool {
 
 func (t *Table) CanManagePlayers() bool {
 	return !t.isHandRunning()
+}
+
+func (t *Table) applyBlindEscalationIfDue() {
+	if !t.BlindEscalation || t.EscalationInterval <= 0 {
+		return
+	}
+	if t.HandsSinceEscalation < t.EscalationInterval {
+		return
+	}
+	t.SmallBlind = int64(float64(t.SmallBlind) * t.EscalationMultiplier)
+	t.BigBlind = int64(float64(t.BigBlind) * t.EscalationMultiplier)
+	t.minRaise = t.BigBlind
+	t.HandsSinceEscalation = 0
+}
+
+func (t *Table) recordCompletedHand() {
+	if !t.BlindEscalation || t.EscalationInterval <= 0 {
+		return
+	}
+	t.HandsSinceEscalation++
+}
+
+func (t *Table) handsUntilEscalation() int {
+	if !t.BlindEscalation || t.EscalationInterval <= 0 {
+		return 0
+	}
+	remaining := t.EscalationInterval - t.HandsSinceEscalation
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
 }
 
 func (t *Table) isEligibleForHand(p *Player) bool {

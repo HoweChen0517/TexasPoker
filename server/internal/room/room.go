@@ -111,10 +111,12 @@ func (s *Session) Handle(userID string, raw []byte) error {
 			return errors.New("only host can start hand")
 		}
 		var req struct {
-			Mode string `json:"mode"`
+			Mode            string `json:"mode"`
+			BlindEscalation bool   `json:"blind_escalation"`
 		}
 		_ = json.Unmarshal(in.Payload, &req)
 		s.table.SetDeckMode(req.Mode)
+		s.table.SetBlindEscalation(req.BlindEscalation)
 		if err := s.table.StartHand(); err != nil {
 			return err
 		}

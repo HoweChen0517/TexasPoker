@@ -240,6 +240,94 @@ func TestMultiwayFlopStartsFromSmallBlind(t *testing.T) {
 	}
 }
 
+func addBlindTestPlayers(tb *Table) {
+	tb.Players["A"] = &Player{UserID: "A", Name: "A", Seat: 0, Chips: 2000, Connected: true}
+	tb.Players["B"] = &Player{UserID: "B", Name: "B", Seat: 1, Chips: 2000, Connected: true}
+}
+
+func TestBlindEscalationDisabledKeepsDefaultBlinds(t *testing.T) {
+	tb := NewTable("blind-disabled")
+	addBlindTestPlayers(tb)
+	tb.HandsSinceEscalation = 10
+
+	if err := tb.StartHand(); err != nil {
+		t.Fatalf("start hand should succeed: %v", err)
+	}
+	if tb.SmallBlind != 10 || tb.BigBlind != 20 {
+		t.Fatalf("blinds got %d/%d want 10/20", tb.SmallBlind, tb.BigBlind)
+	}
+}
+
+func TestBlindEscalationDoublesEveryTenCompletedHands(t *testing.T) {
+	tb := NewTable("blind-enabled")
+	addBlindTestPlayers(tb)
+	tb.SetBlindEscalation(true)
+
+	tb.HandsSinceEscalation = 10
+	if err := tb.StartHand(); err != nil {
+		t.Fatalf("start hand should succeed: %v", err)
+	}
+	if tb.SmallBlind != 20 || tb.BigBlind != 40 {
+		t.Fatalf("first escalation blinds got %d/%d want 20/40", tb.SmallBlind, tb.BigBlind)
+	}
+	if tb.HandsSinceEscalation != 0 {
+		t.Fatalf("hands since escalation got %d want 0", tb.HandsSinceEscalation)
+	}
+	if tb.minRaise != 40 {
+		t.Fatalf("min raise got %d want 40", tb.minRaise)
+	}
+
+	tb.phase = model.PhaseComplete
+	tb.HandsSinceEscalation = 10
+	if err := tb.StartHand(); err != nil {
+		t.Fatalf("second start hand should succeed: %v", err)
+	}
+	if tb.SmallBlind != 40 || tb.BigBlind != 80 {
+		t.Fatalf("second escalation blinds got %d/%d want 40/80", tb.SmallBlind, tb.BigBlind)
+	}
+}
+
+func TestRestartHandPreservesBlindEscalationState(t *testing.T) {
+	tb := NewTable("blind-restart")
+	addBlindTestPlayers(tb)
+	tb.SetBlindEscalation(true)
+	tb.SmallBlind = 20
+	tb.BigBlind = 40
+	tb.minRaise = 40
+	tb.HandsSinceEscalation = 5
+
+	if err := tb.StartHand(); err != nil {
+		t.Fatalf("start hand should succeed: %v", err)
+	}
+	if err := tb.RestartHand(); err != nil {
+		t.Fatalf("restart hand should succeed: %v", err)
+	}
+	if !tb.BlindEscalation {
+		t.Fatalf("blind escalation should remain enabled")
+	}
+	if tb.SmallBlind != 20 || tb.BigBlind != 40 {
+		t.Fatalf("restart blinds got %d/%d want 20/40", tb.SmallBlind, tb.BigBlind)
+	}
+	if tb.HandsSinceEscalation != 5 {
+		t.Fatalf("restart hands since got %d want 5", tb.HandsSinceEscalation)
+	}
+}
+
+func TestSnapshotIncludesBlindEscalationCountdown(t *testing.T) {
+	tb := NewTable("blind-snapshot")
+	addBlindTestPlayers(tb)
+	tb.SetBlindEscalation(true)
+	tb.HandsSinceEscalation = 4
+
+	s := tb.SnapshotFor("A", "A")
+	if !s.BlindEscalationActive {
+		t.Fatalf("snapshot should report active blind escalation")
+	}
+	if s.HandsUntilEscalation != 6 {
+		t.Fatalf("hands until escalation got %d want 6", s.HandsUntilEscalation)
+	}
+}
+
 func TestButtonRotatesAcrossHands(t *testing.T) {
 	tb := NewTable("r7")
 	tb.Players["P0"] = &Player{UserID: "P0", Name: "P0", Seat: 0, Chips: 200, Connected: true}
