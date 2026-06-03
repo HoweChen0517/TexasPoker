@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CardFace } from './components/CardFace';
 import { Seat } from './components/Seat';
+import { SpinDial } from './components/SpinDial';
+import { useAudioFeedback } from './hooks/useAudioFeedback';
+import { useHapticFeedback } from './hooks/useHapticFeedback';
 import { usePokerSocket } from './hooks/usePokerSocket';
-import type { PlayerView } from './types/poker';
+import type { PlayerView, Snapshot } from './types/poker';
 
 const apiBase = (import.meta.env.VITE_API_URL as string | undefined) || `http://${window.location.hostname}:8080`;
 
@@ -116,6 +119,33 @@ function phaseLabel(phase?: string) {
   }
 }
 
+function getMinBet(snapshot: Snapshot | null, me: PlayerView | undefined) {
+  if (!snapshot || !me) return 0;
+  const callCost = Math.max(0, snapshot.current_bet - (me.current_bet ?? 0));
+  if (callCost === 0) return Math.min(snapshot.blind_big, me.chips);
+  return Math.min(callCost, me.chips);
+}
+
+function clampBet(value: number, snapshot: Snapshot | null, me: PlayerView | undefined) {
+  if (!snapshot || !me) return Math.max(0, Math.floor(value));
+  const chips = Math.max(0, me.chips);
+  if (chips === 0) return 0;
+
+  const callCost = Math.max(0, snapshot.current_bet - (me.current_bet ?? 0));
+  const next = Math.min(chips, Math.max(0, Math.floor(value)));
+
+  if (callCost === 0) {
+    return Math.min(chips, Math.max(next, snapshot.blind_big));
+  }
+
+  if (next <= callCost) return Math.min(callCost, chips);
+
+  const minRaiseCommit = callCost + snapshot.min_raise;
+  if (chips < minRaiseCommit) return Math.min(callCost, chips);
+  if (next < minRaiseCommit) return minRaiseCommit;
+  return next;
+}
+
 export default function App() {
   const [login, setLogin] = useState<LoginState | null>(null);
 
@@ -199,12 +229,16 @@ function TableView({
   onLeave: () => void;
   onResetIdentity: () => void;
 }) {
+  const [betAmount, setBetAmount] = useState(40);
   const [amountInput, setAmountInput] = useState('40');
   const [startMode, setStartMode] = useState<'classic' | 'short'>('classic');
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
   const [phasePop, setPhasePop] = useState('');
   const phaseRef = useRef<string>('');
+  const betHandRef = useRef<number | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const dialAudio = useAudioFeedback();
+  const haptics = useHapticFeedback();
   const { state, snapshot, error, send } = usePokerSocket(apiBase, login.room, login.user, login.name, login.buyIn);
 
   const seats = useMemo(() => seatOrder(snapshot?.players ?? []), [snapshot]);
@@ -230,9 +264,11 @@ function TableView({
       snapshot.phase !== 'complete' &&
       snapshot.phase !== 'waiting'
   );
-  const amount = Number.parseInt(amountInput, 10);
+  const amount = betAmount;
   const hasValidAmount = Number.isFinite(amount) && amount > 0;
   const callCost = Math.max(0, (snapshot?.current_bet ?? 0) - (me?.current_bet ?? 0));
+  const minBet = getMinBet(snapshot, me);
+  const maxBet = Math.max(0, me?.chips ?? 0);
   const actionState = useMemo(() => {
     const disabledAll = {
       fold: false,
@@ -251,9 +287,9 @@ function TableView({
     const canFold = callCost > 0;
     const canCall = callCost > 0 && me.chips >= callCost;
     const canCheck = callCost === 0;
-    const canBet = hasValidAmount && snapshot.current_bet === 0 && me.chips >= Math.max(snapshot.blind_big, amount);
-    const needToRaiseBy = snapshot.current_bet > 0 ? callCost + amount : amount;
-    const canRaise = hasValidAmount && snapshot.current_bet > 0 && amount >= snapshot.min_raise && me.chips >= needToRaiseBy;
+    const canBet = hasValidAmount && snapshot.current_bet === 0 && amount >= snapshot.blind_big && amount <= me.chips;
+    const raiseBy = amount - callCost;
+    const canRaise = hasValidAmount && snapshot.current_bet > 0 && amount <= me.chips && raiseBy >= snapshot.min_raise;
 
     return {
       fold: !canFold,
@@ -263,7 +299,7 @@ function TableView({
       bet: !canBet,
       raise: !canRaise
     };
-  }, [snapshot, me, amount, hasValidAmount, isYourTurn]);
+  }, [snapshot, me, amount, hasValidAmount, isYourTurn, callCost]);
   const canRemoveSelected = Boolean(
     isHost &&
       snapshot &&
@@ -271,6 +307,11 @@ function TableView({
       selectedPlayer &&
       selectedPlayer.user_id !== login.user
   );
+
+  const updateBetAmount = (next: number) => {
+    setBetAmount(next);
+    setAmountInput(String(next));
+  };
 
   useEffect(() => {
     const initAudio = async () => {
@@ -335,6 +376,21 @@ function TableView({
     return () => window.clearTimeout(timeout);
   }, [snapshot?.phase]);
 
+  useEffect(() => {
+    if (!snapshot || !me) return;
+    let nextAmount = minBet;
+    setBetAmount((current) => {
+      if (betHandRef.current !== snapshot.hand_id) {
+        betHandRef.current = snapshot.hand_id;
+        nextAmount = clampBet(minBet, snapshot, me);
+        return nextAmount;
+      }
+      nextAmount = clampBet(current || minBet, snapshot, me);
+      return nextAmount;
+    });
+    setAmountInput(String(nextAmount));
+  }, [snapshot?.hand_id, snapshot?.phase, snapshot?.current_bet, snapshot?.min_raise, snapshot?.blind_big, me?.chips, me?.current_bet, minBet, snapshot, me]);
+
   const clickSeat = async (seat: number) => {
     setSelectedSeat(seat);
   };
@@ -349,25 +405,24 @@ function TableView({
       return { disabled: !canBet, action: 'bet' as const };
     }
 
-    if (amount < snapshot.current_bet) {
+    if (amount < callCost) {
       return { disabled: true, action: 'raise' as const };
     }
 
-    if (amount === snapshot.current_bet) {
+    if (amount === callCost) {
       return { disabled: actionState.call, action: 'call' as const };
     }
 
-    const raiseBy = amount - snapshot.current_bet
-    const chipsNeeded = amount - me.current_bet
-    const canRaise = chipsNeeded > 0 && chipsNeeded <= me.chips && raiseBy >= snapshot.min_raise
+    const raiseBy = amount - callCost
+    const canRaise = amount > callCost && amount <= me.chips && raiseBy >= snapshot.min_raise
     return { disabled: !canRaise, action: 'raise' as const }
-  }, [snapshot, me, isYourTurn, hasValidAmount, amount, actionState.call]);
+  }, [snapshot, me, isYourTurn, hasValidAmount, amount, callCost, actionState.call]);
 
   const fillAmountByPot = (ratio: number) => {
     const pot = snapshot?.pot ?? 0;
     if (pot <= 0) return;
     const computed = Math.max(1, Math.floor(pot * ratio));
-    setAmountInput(String(computed));
+    updateBetAmount(clampBet(computed, snapshot, me));
   };
 
   const submitWager = async () => {
@@ -380,7 +435,7 @@ function TableView({
       await send('action', { action: 'call' });
       return;
     }
-    await send('action', { action: 'raise', amount: amount - snapshot.current_bet });
+    await send('action', { action: 'raise', amount: amount - callCost });
   };
 
   return (
@@ -437,53 +492,86 @@ function TableView({
             </div>
 
             <div className={`action-dock ${isYourTurn ? 'self-turn' : ''}`}>
-              <div className="hero-action-row">
-                <div className="me-strip">
-                  <div className="me-strip-head">
-                    <span>{login.name}</span>
-                    <span>{me ? `${me.chips} chips` : '--'}</span>
-                  </div>
-                  <div className="cards-inline me-cards">
-                    {(snapshot?.your_cards ?? []).length
-                      ? (snapshot?.your_cards ?? []).map((card, i) => <CardFace key={`${card.suit}${card.rank}-me-${i}`} card={card} />)
-                      : [0, 1].map((i) => <CardFace key={`me-empty-${i}`} hidden />)}
-                  </div>
+              <div className="me-strip">
+                <div className="me-strip-head">
+                  <span>{login.name}</span>
+                  <span>{me ? `${me.chips} chips` : '--'}</span>
                 </div>
-
-                <div className="primary-actions">
-                  <button disabled={actionState.check} onClick={() => send('action', { action: 'check' })}>
-                    Check
-                  </button>
-                  <button className="primary" disabled={actionState.call} onClick={() => send('action', { action: 'call' })}>
-                    Call {callCost > 0 ? callCost : ''}
-                  </button>
-                  <button disabled={actionState.fold} onClick={() => send('action', { action: 'fold' })}>
-                    Fold
-                  </button>
-                  <button disabled={actionState.allIn} onClick={() => send('action', { action: 'all_in' })}>
-                    All In
-                  </button>
+                <div className="cards-inline me-cards">
+                  {(snapshot?.your_cards ?? []).length
+                    ? (snapshot?.your_cards ?? []).map((card, i) => <CardFace key={`${card.suit}${card.rank}-me-${i}`} card={card} />)
+                    : [0, 1].map((i) => <CardFace key={`me-empty-${i}`} hidden />)}
                 </div>
               </div>
 
-              <div className="bet-row">
-                <input
-                  className="amount-input"
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="amount"
-                  value={amountInput}
-                  onChange={(e) => setAmountInput(e.target.value.replace(/[^\d]/g, ''))}
-                />
-                <button className="secondary quick-chip" type="button" onClick={() => fillAmountByPot(0.5)}>
-                  1/2 Pot
-                </button>
-                <button className="secondary quick-chip" type="button" onClick={() => fillAmountByPot(1)}>
-                  1 Pot
-                </button>
-                <button className="primary confirm-chip" disabled={confirmState.disabled} onClick={submitWager}>
-                  Confirm
-                </button>
+              <div className="wager-panel">
+                <div className="dial-column">
+                  <span className="dial-caption">Wager</span>
+                  <SpinDial
+                    value={betAmount}
+                    min={minBet}
+                    max={maxBet}
+                    step={10}
+                    disabled={!isYourTurn || maxBet <= 0}
+                    normalizeValue={(value) => clampBet(value, snapshot, me)}
+                    onChange={updateBetAmount}
+                    onTick={() => {
+                      dialAudio.playTick();
+                      haptics.tick();
+                    }}
+                    onSnap={() => dialAudio.playSnap()}
+                  />
+                </div>
+
+                <div className="wager-actions">
+                  <div className="primary-actions">
+                    <button disabled={actionState.check} onClick={() => send('action', { action: 'check' })}>
+                      Check
+                    </button>
+                    <button className="primary" disabled={actionState.call} onClick={() => send('action', { action: 'call' })}>
+                      Call {callCost > 0 ? callCost : ''}
+                    </button>
+                    <button disabled={actionState.fold} onClick={() => send('action', { action: 'fold' })}>
+                      Fold
+                    </button>
+                    <button disabled={actionState.allIn} onClick={() => send('action', { action: 'all_in' })}>
+                      All In
+                    </button>
+                  </div>
+
+                  <div className="quick-actions">
+                    <input
+                      className="amount-input"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="amount"
+                      value={amountInput}
+                      onChange={(e) => {
+                        const digits = e.target.value.replace(/[^\d]/g, '');
+                        setAmountInput(digits);
+                        if (!digits) {
+                          setBetAmount(0);
+                          return;
+                        }
+                        updateBetAmount(clampBet(Number.parseInt(digits, 10), snapshot, me));
+                      }}
+                      onBlur={() => {
+                        if (!amountInput) {
+                          updateBetAmount(clampBet(minBet, snapshot, me));
+                        }
+                      }}
+                    />
+                    <button className="secondary quick-chip" type="button" onClick={() => fillAmountByPot(0.5)}>
+                      1/2 Pot
+                    </button>
+                    <button className="secondary quick-chip" type="button" onClick={() => fillAmountByPot(1)}>
+                      Pot
+                    </button>
+                    <button className="primary confirm-chip" disabled={confirmState.disabled} onClick={submitWager}>
+                      Confirm {hasValidAmount ? amount : ''}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

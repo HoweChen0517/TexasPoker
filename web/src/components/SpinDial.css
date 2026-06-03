@@ -1,0 +1,99 @@
+.spin-dial.vertical {
+  width: clamp(44px, 10vw, 56px);
+  min-height: 156px;
+  border: 2px solid var(--ink);
+  border-radius: 18px;
+  background:
+    radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 0.95) 0 24%, transparent 52%),
+    linear-gradient(90deg, #deded6 0%, var(--panel) 20%, #ffffff 50%, var(--panel) 80%, #deded6 100%);
+  display: grid;
+  grid-template-rows: 30px minmax(0, 1fr) 30px;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  box-shadow:
+    inset 6px 0 10px rgba(17, 17, 17, 0.12),
+    inset -6px 0 10px rgba(17, 17, 17, 0.08),
+    3px 3px 0 #111;
+}
+
+.spin-dial.vertical.disabled {
+  opacity: 0.52;
+  pointer-events: none;
+  box-shadow: inset 4px 0 8px rgba(17, 17, 17, 0.08);
+}
+
+.spin-dial-nudge {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 18px;
+  line-height: 1;
+  padding: 0;
+  opacity: 0.72;
+  box-shadow: none;
+}
+
+.spin-dial-nudge:hover {
+  background: rgba(17, 17, 17, 0.07);
+}
+
+.spin-dial-window {
+  position: relative;
+  overflow: hidden;
+  perspective: 260px;
+}
+
+.spin-dial-window::before,
+.spin-dial-window::after {
+  content: '';
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  height: 22px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.spin-dial-window::before {
+  top: 0;
+  background: linear-gradient(180deg, var(--panel-soft), transparent);
+}
+
+.spin-dial-window::after {
+  bottom: 0;
+  background: linear-gradient(0deg, var(--panel-soft), transparent);
+}
+
+.spin-dial-track {
+  position: relative;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  transform-style: preserve-3d;
+}
+
+.spin-dial-track::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 50%;
+  height: 82%;
+  transform: translateY(-50%);
+  border: 2px solid rgba(17, 17, 17, 0.38);
+  border-radius: 999px;
+  background:
+    repeating-linear-gradient(180deg, rgba(17, 17, 17, 0.16) 0 2px, transparent 2px 9px),
+    rgba(255, 255, 255, 0.46);
+}
+
+.spin-dial-grip {
+  width: 26px;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(17, 17, 17, 0.45);
+  box-shadow: 0 14px 0 rgba(17, 17, 17, 0.28), 0 -14px 0 rgba(17, 17, 17, 0.28);
+  opacity: 0.6;
+}

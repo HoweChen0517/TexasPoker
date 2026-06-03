@@ -384,13 +384,6 @@ body {
   box-shadow: 0 0 0 4px rgba(17, 17, 17, 0.14);
 }
 
-.hero-action-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-  gap: 8px;
-  align-items: stretch;
-}
-
 .me-strip {
   border: 2px dashed var(--ink);
   border-radius: 12px;
@@ -410,6 +403,34 @@ body {
   flex-wrap: nowrap;
 }
 
+.wager-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.dial-column {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 5px;
+  justify-items: center;
+}
+
+.dial-caption {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.wager-actions {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 7px;
+  min-width: 0;
+}
+
 .primary-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -417,14 +438,14 @@ body {
   gap: 6px;
 }
 
-.bet-row {
+.quick-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) repeat(3, auto);
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 1.25fr);
   gap: 6px;
-  align-items: center;
 }
 
 .amount-input {
+  grid-column: 1 / -1;
   min-width: 0;
 }
 
@@ -586,10 +607,6 @@ select {
     box-shadow: none;
   }
 
-  .hero-action-row {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-
   .me-strip {
     padding: 6px;
   }
@@ -599,14 +616,23 @@ select {
   }
 
   .primary-actions button,
-  .bet-row button {
+  .quick-actions button {
     padding-left: 4px;
     padding-right: 4px;
     font-size: 12px;
   }
 
-  .bet-row {
-    grid-template-columns: minmax(0, 1fr) auto auto auto;
+  .wager-panel {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .quick-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .confirm-chip {
+    grid-column: 1 / -1;
   }
 
   .player-pool {
